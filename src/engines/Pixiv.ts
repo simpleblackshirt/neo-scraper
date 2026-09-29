@@ -1,4 +1,4 @@
-import { ScrapeEngineBase, ScrapeResult, ScrapedPost, ScrapeEngineFeature } from "../ScrapeEngine.js";
+import { ScrapeEngineBase, ScrapeResult, ScrapedPost, ScrapedTag, ScrapeEngineFeature } from "../ScrapeEngine.js";
 import { guessContentType } from "../Utility.js";
 
 export function upgradeUrlToOriginalQuality(imgLink: string) {
@@ -21,11 +21,73 @@ export function upgradeUrlToOriginalQuality(imgLink: string) {
   return imgLink;
 }
 
+interface PreloadIllust {
+  userName?: string;
+  xRestrict?: number;
+  tags?: { tag?: string }[];
+}
+
 export default class Pixiv extends ScrapeEngineBase {
   name = "pixiv";
-  features: ScrapeEngineFeature[] = ["content"];
-  notes = [];
+  features: ScrapeEngineFeature[] = ["content", "rating", "tags", "tag_category", "source"];
+  notes = ["Artist names are scraped as artist tags, artwork tags are scraped as untagged tags."];
   supportedHosts = ["pixiv.net"];
+
+  /**
+   * Parses tags, the artist name and the rating from the JSON payload
+   * embedded in the `meta#meta-preload-data` element.
+   */
+  parsePreloadData(document: Document): { tags: ScrapedTag[]; artist: ScrapedTag | undefined; xRestrict: number } {
+    const tags: ScrapedTag[] = [];
+    let artist: ScrapedTag | undefined = undefined;
+    let xRestrict = 0;
+
+    const preloadMeta = document.querySelector<HTMLMetaElement>("meta#meta-preload-data");
+    if (preloadMeta?.content) {
+      try {
+        const data = JSON.parse(preloadMeta.content);
+        const illustMap: { [key: string]: PreloadIllust } = data?.body?.illust ?? {};
+        const illusts = Object.values(illustMap);
+        if (illusts.length > 0) {
+          const illust = illusts[0];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          xRestrict = (illust as any).xRestrict ?? 0;
+          if (illust.userName) {
+            artist = new ScrapedTag(illust.userName, "artist");
+          }
+          for (const t of illust.tags ?? []) {
+            if (t?.tag) {
+              tags.push(new ScrapedTag(t.tag));
+            }
+          }
+        }
+      } catch (ex) {
+        this.log("Couldn't parse meta#meta-preload-data payload. " + ex);
+      }
+    }
+
+    // Fallback for pages without (or with an unparsable) preload payload.
+    if (tags.length == 0) {
+      for (const a of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href*='/tags/']"))) {
+        if (a.pathname.indexOf("/tags/R-18") != -1) {
+          continue; // This is the rating link, not a tag.
+        }
+        const name = decodeURIComponent(a.pathname.split("/")[2] ?? "");
+        if (name) {
+          tags.push(new ScrapedTag(name));
+        }
+      }
+    }
+    if (!artist) {
+      const authorLink = document.querySelector<HTMLAnchorElement>("a[href*='/users/']");
+      const name = authorLink?.textContent?.trim();
+      if (name) {
+        artist = new ScrapedTag(name, "artist");
+      }
+    }
+
+    return { tags, artist, xRestrict };
+  }
 
   scrapeDocument(document: Document): ScrapeResult {
     const result = new ScrapeResult(this.name);
@@ -63,16 +125,23 @@ export default class Pixiv extends ScrapeEngineBase {
       }
     }
 
+    const { tags, artist, xRestrict } = this.parsePreloadData(document);
+
     for (const imgLink of imgLinks) {
       const post = new ScrapedPost();
       post.pageUrl = document.location.href;
       post.contentUrl = upgradeUrlToOriginalQuality(imgLink);
       post.contentType = guessContentType(post.contentUrl);
       post.referrer = document.location.origin;
-      result.tryAddPost(post);
+      post.sources = [document.location.href];
+      post.tags = artist ? tags.concat([artist]) : tags.slice();
       if (document.querySelector('a[href*="/tags/R-18/artworks"]')) {
         post.rating = "unsafe";
+      } else if (xRestrict == 1 || xRestrict == 2) {
+        // xRestrict: 1 = R-18, 2 = R-18G
+        post.rating = "unsafe";
       }
+      result.tryAddPost(post);
     }
 
     return result;

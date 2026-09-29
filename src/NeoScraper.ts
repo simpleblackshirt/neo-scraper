@@ -16,6 +16,7 @@ export default class NeoScraper {
         new engines.FurAffinity(),
         new engines.Gelbooru(),
         new engines.Inkbunny(),
+        new engines.Lofter(),
         new engines.Moebooru(),
         new engines.Nozomi(),
         new engines.Philomena(),
@@ -26,6 +27,8 @@ export default class NeoScraper {
         new engines.Shimmie2(),
         new engines.Shuushuu(),
         new engines.Twitter(),
+        new engines.Weibo(),
+        new engines.Xiaohongshu(),
         new engines.Zerochan()
       );
       this.fallbackEngine = new engines.Fallback();
