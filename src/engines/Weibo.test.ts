@@ -350,6 +350,105 @@ describe("ignore weibo emoticons (fixture)", () => {
   });
 });
 
+// Gating: the positive scan is scoped to the post article. Comment threads
+// and page noise render outside it through the same shared picture component.
+
+describe("exclude weibo comment-area and page noise via article scoping (fixture)", () => {
+  // Pic-ids from the capture: commenter avatar 008GTexBly8ifam7xy797j30u00u043c,
+  // author avatar 008sAXVzly8ifcwphlmc8j30u00u0jv3.
+  const pageUrl = "https://weibo.com/7751610237/PDv9O4ebt";
+  const html = `<html><body>
+    <article><div class="wbpro-feed-content">
+      <div class="picture"><div class="woo-picture-main">
+        <img class="woo-picture-img" src="https://wx1.sinaimg.cn/mw2000/008sAXVzgy1i3w4hziy4yj3180140an2.jpg">
+      </div></div>
+    </div></article>
+    <div class="wbpro-comments"><div class="woo-comment-item">
+      <img class="woo-avatar-img" src="https://wx1.sinaimg.cn/thumbnail/008GTexBly8ifam7xy797j30u00u043c.jpg">
+      <img class="woo-picture-img" src="//wx1.sinaimg.cn/thumbnail/008GTexBly8ifam7xy797j30u00u043c.jpg">
+    </div></div>
+    <img src="//wx1.sinaimg.cn/mw690/008sAXVzly8ifcwphlmc8j30u00u0jv3.jpg">
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("should only scrape the article feed image", () => {
+    expect(res.posts.map((x) => x.contentUrl)).toEqual([
+      "https://wx1.sinaimg.cn/large/008sAXVzgy1i3w4hziy4yj3180140an2.jpg",
+    ]);
+  });
+});
+
+describe("rescue weibo images via the page-global fallback scan (fixture)", () => {
+  // Pages whose DOM doesn't match the article shape must still extract
+  // through the global img scan.
+  const pageUrl = "https://weibo.com/7751610237/PDv9O4ebt";
+  const html = `<html><body>
+    <div class="main-wrap"><img src="https://wx1.sinaimg.cn/mw2000/008sAXVzgy1i3w4hziy4yj3180140an2.jpg"></div>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("should extract the image when the scoped scan is empty", () => {
+    expect(res.posts.map((x) => x.contentUrl)).toEqual([
+      "https://wx1.sinaimg.cn/large/008sAXVzgy1i3w4hziy4yj3180140an2.jpg",
+    ]);
+  });
+});
+
+describe("reject weibo emoticon stickers hosted on sinaimg.cn (fixture)", () => {
+  // Sticker packs are real sinaimg media carrying size tokens; the
+  // bracketed alt/title emoticon marker is the only rejection signal.
+  const pageUrl = "https://weibo.com/7751610237/PDv9O4ebt";
+  const html = `<html><body>
+    <article><div class="wbpro-feed-content">
+      <img alt="[doge]" title="[doge]" src="https://wx1.sinaimg.cn/mw690/008GTexBly8ifam7xy797j30u00u043c.jpg">
+    </div></article>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("should find no posts from bracket-alt emoticons", () => {
+    expect(res.posts.length).toBe(0);
+  });
+});
+
+describe("exclude weibo comment/reply containers in the fallback scan (fixture)", () => {
+  // No article shape: the fallback scan runs, so the comment/reply
+  // container exclusion and the emoticon rejection backstop it.
+  const pageUrl = "https://weibo.com/7751610237/PDv9O4ebt";
+  const html = `<html><body>
+    <div><img src="https://wx1.sinaimg.cn/mw2000/008sAXVzgy1i3w4hziy4yj3180140an2.jpg"></div>
+    <div class="wbpro-comment">
+      <img src="https://wx1.sinaimg.cn/mw690/008GTexBly8ifam7xy797j30u00u043c.jpg">
+    </div>
+    <div class="reply-list">
+      <img title="[哈哈]" src="https://wx1.sinaimg.cn/orj480/008GTexBly8ifam7xy797j30u00u043c.jpg">
+    </div>
+    <img alt="[微笑]" src="//wx1.sinaimg.cn/mw690/008sAXVzly8ifcwphlmc8j30u00u0jv3.jpg">
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("should scrape only the post image", () => {
+    expect(res.posts.map((x) => x.contentUrl)).toEqual([
+      "https://wx1.sinaimg.cn/large/008sAXVzgy1i3w4hziy4yj3180140an2.jpg",
+    ]);
+  });
+});
+
 describe("skip weibo feed pages (fixture)", () => {
   const pageUrl = "https://weibo.com/u/1234567890";
   const html = `<html><body><img src="https://wx1.sinaimg.cn/mw2000/abc/def.jpg"></body></html>`;

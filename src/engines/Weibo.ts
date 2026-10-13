@@ -194,17 +194,29 @@ export default class Weibo extends ScrapeEngineBase {
       return result;
     }
 
-    // Images. Prefer feed-content images so page chrome can't win, exclude
-    // avatars and the sidebar author banner, upgrade remaining URLs to /large/.
+    // Images. The positive scan is scoped to the post article: comment
+    // threads, related cards and the lightbox render outside it through the
+    // same shared picture component. When the scoped scan yields at least
+    // one url the page-global img fallback is skipped entirely; the fallback
+    // only rescues pages whose DOM doesn't match the article shape. Exclude
+    // avatars, the sidebar author banner and comment/reply containers, skip
+    // weibo emoticon imgs, upgrade remaining URLs to /large/.
     const isNotChrome = (x: HTMLImageElement) =>
-      !x.closest("header, [class*='avatar'], .avatar, .head, .profile, [class*='side']");
+      !x.closest("header, [class*='avatar'], .avatar, .head, .profile, [class*='side'], [class*='omment'], [class*='eply']");
+    // "[...]" alt/title is weibo's emoticon convention; sinaimg-hosted
+    // sticker packs carry real size tokens so the URL test can't reject them.
+    const isNotEmoticon = (x: HTMLImageElement) => !/^\[.+\]$/.test(x.alt) && !/^\[.+\]$/.test(x.title);
+    const sinaUrlsFrom = (imgs: HTMLImageElement[]) =>
+      imgs.filter((x) => isNotChrome(x) && isNotEmoticon(x)).map((x) => sinaImageUrlFromImg(x));
     const seenUrls = new Set<string>();
-    const imgUrls = Array.from(
-      document.querySelectorAll<HTMLImageElement>(".wbpro-feed-content img, .woo-picture-img")
-    )
-      .concat(Array.from(document.querySelectorAll<HTMLImageElement>("img")))
-      .filter(isNotChrome)
-      .map((x) => sinaImageUrlFromImg(x));
+    const imgUrls = sinaUrlsFrom(
+      Array.from(
+        document.querySelectorAll<HTMLImageElement>("article .wbpro-feed-content img, article .woo-picture-img")
+      )
+    );
+    if (!imgUrls.some(Boolean)) {
+      imgUrls.push(...sinaUrlsFrom(Array.from(document.querySelectorAll<HTMLImageElement>("img"))));
+    }
 
     for (const rawUrl of imgUrls) {
       if (!rawUrl) {
