@@ -47,10 +47,13 @@ export default class Lofter extends ScrapeEngineBase {
       return result;
     }
 
-    // Tags from the post's tag links: #tag#
+    // Tags from the post's tag links. The name is derived from the encoded
+    // /tag/ link target, because the display text can carry decoration glyphs
+    // (e.g. "●_明日方舟") that can't be stripped reliably.
     const tags: ScrapedTag[] = [];
     for (const a of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href*='/tag/']"))) {
-      const name = (a.textContent ?? "")
+      const nameSegment = a.pathname.split("/").pop() ?? "";
+      const name = (nameSegment ? decodeURIComponent(nameSegment) : (a.textContent ?? ""))
         .replace(/^#/g, "")
         .replace(/#$/g, "")
         .trim();

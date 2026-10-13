@@ -21,10 +21,16 @@ export function upgradeUrlToOriginalQuality(imgLink: string) {
   return imgLink;
 }
 
+interface PreloadIllustTag {
+  tag?: string;
+}
+
 interface PreloadIllust {
+  userId?: string;
   userName?: string;
   xRestrict?: number;
-  tags?: { tag?: string }[];
+  // Live payloads wrap the array as { tags: [...] }; older ones use a plain array.
+  tags?: PreloadIllustTag[] | { tags?: PreloadIllustTag[] };
 }
 
 export default class Pixiv extends ScrapeEngineBase {
@@ -34,11 +40,31 @@ export default class Pixiv extends ScrapeEngineBase {
   supportedHosts = ["pixiv.net"];
 
   /**
+   * Builds a single ordered, unique tag list. Names are deduplicated after
+   * ScrapedTag normalization, so aliases that normalize identically collapse.
+   */
+  private static uniqueTags(names: string[]): ScrapedTag[] {
+    const seen = new Set<string>();
+    const tags: ScrapedTag[] = [];
+    for (const name of names) {
+      if (!name) {
+        continue;
+      }
+      const tag = new ScrapedTag(name);
+      if (!seen.has(tag.name)) {
+        seen.add(tag.name);
+        tags.push(tag);
+      }
+    }
+    return tags;
+  }
+
+  /**
    * Parses tags, the artist name and the rating from the JSON payload
    * embedded in the `meta#meta-preload-data` element.
    */
   parsePreloadData(document: Document): { tags: ScrapedTag[]; artist: ScrapedTag | undefined; xRestrict: number } {
-    const tags: ScrapedTag[] = [];
+    let tags: ScrapedTag[] = [];
     let artist: ScrapedTag | undefined = undefined;
     let xRestrict = 0;
 
@@ -50,16 +76,16 @@ export default class Pixiv extends ScrapeEngineBase {
         const illusts = Object.values(illustMap);
         if (illusts.length > 0) {
           const illust = illusts[0];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          xRestrict = (illust as any).xRestrict ?? 0;
-          if (illust.userName) {
-            artist = new ScrapedTag(illust.userName, "artist");
+          xRestrict = illust.xRestrict ?? 0;
+          // The user map (keyed by illust.userId) is the authoritative identity
+          // source; illust.userName only exists on older payloads.
+          const userMap: { [key: string]: { name?: string } } = data?.body?.user ?? {};
+          const name = (illust.userId ? userMap[illust.userId]?.name : undefined) ?? illust.userName;
+          if (name) {
+            artist = new ScrapedTag(name, "artist");
           }
-          for (const t of illust.tags ?? []) {
-            if (t?.tag) {
-              tags.push(new ScrapedTag(t.tag));
-            }
-          }
+          const tagList = Array.isArray(illust.tags) ? illust.tags : (illust.tags?.tags ?? []);
+          tags = Pixiv.uniqueTags(tagList.map((t) => t?.tag ?? ""));
         }
       } catch (ex) {
         this.log("Couldn't parse meta#meta-preload-data payload. " + ex);
@@ -68,19 +94,52 @@ export default class Pixiv extends ScrapeEngineBase {
 
     // Fallback for pages without (or with an unparsable) preload payload.
     if (tags.length == 0) {
+      const names: string[] = [];
+      // Live pages render one <li> per tag, with the tag anchor followed by a
+      // translation anchor inside the same <li>; only the first anchor (the
+      // original tag) may contribute a name.
+      const consumedLi = new Set<Element>();
       for (const a of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href*='/tags/']"))) {
+        const li = a.closest("li");
+        if (li) {
+          if (consumedLi.has(li)) {
+            continue;
+          }
+          consumedLi.add(li);
+        }
         if (a.pathname.indexOf("/tags/R-18") != -1) {
           continue; // This is the rating link, not a tag.
         }
-        const name = decodeURIComponent(a.pathname.split("/")[2] ?? "");
+        // The /tags/ segment may be preceded by a locale prefix (/en/tags/…),
+        // so locate it instead of assuming a fixed index.
+        const segments = a.pathname.split("/");
+        const tagsIndex = segments.indexOf("tags");
+        const name = tagsIndex != -1 ? decodeURIComponent(segments[tagsIndex + 1] ?? "") : "";
         if (name) {
-          tags.push(new ScrapedTag(name));
+          names.push(name);
         }
       }
+      tags = Pixiv.uniqueTags(names);
     }
     if (!artist) {
-      const authorLink = document.querySelector<HTMLAnchorElement>("a[href*='/users/']");
-      const name = authorLink?.textContent?.trim();
+      // Live artwork pages have no <article>; the author area is an <h2>
+      // holding the avatar link (empty text) plus the name link. The viewer's
+      // own header profile link is never inside an h2, so an h2-scoped match
+      // always beats it; the residual whole-document fallback additionally
+      // excludes nav/header-scoped links and empty (avatar) anchors.
+      const plainProfile = /^\/(\w{2}\/)?users\/\d+$/;
+      const textOf = (a: HTMLAnchorElement) => (a.textContent ?? "").trim();
+      const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href*='/users/']"));
+      const authorLink =
+        anchors.find((a) => plainProfile.test(a.pathname) && textOf(a) != "" && a.closest("h2") != null) ??
+        anchors.find(
+          (a) =>
+            plainProfile.test(a.pathname) &&
+            textOf(a) != "" &&
+            a.closest("nav") == null &&
+            a.closest("header") == null
+        );
+      const name = authorLink ? textOf(authorLink) : "";
       if (name) {
         artist = new ScrapedTag(name, "artist");
       }

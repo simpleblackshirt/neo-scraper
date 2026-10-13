@@ -26,7 +26,7 @@ export default class Shimmie2 extends ScrapeEngineBase {
     //   }
     // }
 
-    // @ts-expect-error
+    // @ts-expect-error getElementById returns HTMLElement, which has no src property
     post.contentUrl = document.getElementById("main_image").src;
 
     // Set content type

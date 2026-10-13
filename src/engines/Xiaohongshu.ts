@@ -53,7 +53,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
     "The author's nickname becomes an artist tag. Xiaohongshu changes its internals often, so this engine can break at any time.",
     "Multi-image notes are scraped as multiple posts.",
   ];
-  supportedHosts = ["xiaohongshu.com"];
+  supportedHosts = ["xiaohongshu.com", "rednote.com"];
 
   /**
    * Content scripts cannot access the page's JavaScript globals, so the
@@ -103,6 +103,19 @@ export default class Xiaohongshu extends ScrapeEngineBase {
     return segments[segments.length - 1] ?? "";
   }
 
+  /**
+   * The URL exactly as browsed (host, path, query verbatim, including
+   * xsec_token) is the only usable note reference
+   */
+  getSourceUrls(document: Document, noteId: string): string[] {
+    const href = document.location.href;
+    const canonical = "https://www.xiaohongshu.com/explore/" + noteId;
+    if (!href.startsWith("http")) {
+      return noteId ? [canonical] : [href];
+    }
+    return href == canonical ? [href] : [href, canonical];
+  }
+
   scrapeDocument(document: Document): ScrapeResult {
     const result = new ScrapeResult(this.name);
 
@@ -120,8 +133,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
       tags.push(new ScrapedTag(note.user.nickname, "artist"));
     }
 
-    const source =
-      noteId && noteId.length > 0 ? "https://www.xiaohongshu.com/explore/" + noteId : document.location.href;
+    const sources = this.getSourceUrls(document, noteId);
 
     // Video note.
     const videoUrl = pickVideoUrl(note?.video);
@@ -130,7 +142,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
       post.pageUrl = document.location.href;
       post.contentUrl = videoUrl;
       post.contentType = "video";
-      post.sources = [source];
+      post.sources = sources;
       post.tags = tags.slice();
       result.tryAddPost(post);
       return result;
@@ -146,7 +158,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
       post.pageUrl = document.location.href;
       post.contentUrl = contentUrl;
       post.contentType = guessContentType(contentUrl);
-      post.sources = [source];
+      post.sources = sources;
       post.tags = tags.slice();
       result.tryAddPost(post);
     }
@@ -162,7 +174,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
       post.pageUrl = document.location.href;
       post.contentUrl = ogImage.content;
       post.contentType = guessContentType(post.contentUrl);
-      post.sources = [document.location.href];
+      post.sources = this.getSourceUrls(document, noteId);
       for (const a of Array.from(
         document.querySelectorAll<HTMLAnchorElement>("a[href*='search_result'], a.tag")
       )) {

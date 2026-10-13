@@ -10,8 +10,9 @@ describe("get lofter post (fixture)", () => {
       <img src="https://imglf6.lf127.net/img/def456.jpg?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=1">
     </div>
     <div class="postdata">
-      <a class="tag" href="http://www.lofter.com/tag/draw">#绘画#</a>
+      <a class="tag" href="http://www.lofter.com/tag/%E7%BB%98%E7%94%BB">#绘画#</a>
       <a class="tag" href="http://www.lofter.com/tag/Some%20Fandom">#Some Fandom#</a>
+      <a class="tag" href="/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F">●_明日方舟</a>
     </div>
     </body></html>`;
   let res: ScrapeResults;
@@ -37,6 +38,13 @@ describe("get lofter post (fixture)", () => {
     expect(res.posts[0]).toHaveTag("绘画");
     expect(res.posts[0]).toHaveTag("some_fandom");
     expect(res.posts[0]).toHaveTag("someblog", "artist");
+  });
+
+  it("should derive tag names from the tag link href, ignoring decoration glyphs", () => {
+    // Live tag anchors render like "●_明日方舟"; the name must come from the
+    // encoded /tag/ href instead of the display text.
+    expect(res.posts[0]).toHaveTag("明日方舟");
+    expect(res.posts[0].tags.find((x) => x.name.indexOf("●") != -1)).toBeUndefined();
   });
 
   it("should have the permalink as source", () => {
