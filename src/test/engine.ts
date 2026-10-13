@@ -9,7 +9,7 @@ export const MobileUserAgent = "Mozilla/5.0 (Android 12; Mobile; rv:68.0) Gecko/
  * @returns
  */
 export async function scrapeUrl(url: string) {
-  const dom = await JSDOM.fromURL(url, {
+  const dom = await JSDOM.fromURL(url, <ConstructorOptions>{
     userAgent: "PostmanRuntime/7.37.3",
   });
   return scrapeDom(dom.window.document);
@@ -51,6 +51,20 @@ async function scrapeHtml(url: string, html: string) {
 }
 
 async function scrapeDom(document: Document) {
+  // jsdom >= 16 uses per-window interfaces, so the innerText polyfill from
+  // jest.setup.ts (defined on one throwaway instance) does not reach documents
+  // created here. Re-apply it to this document's realm.
+  // See https://github.com/jsdom/jsdom/issues/1245
+  const win = document.defaultView;
+  if (win && !Object.getOwnPropertyDescriptor(win.Element.prototype, "innerText")) {
+    Object.defineProperty(win.Element.prototype, "innerText", {
+      get(this: Element) {
+        return this.textContent?.replace(/(\r\n|\n|\r|^\s+|\s+$)/gm, "") ?? "";
+      },
+      configurable: true,
+    });
+  }
+
   const scraper = new NeoScraper();
   return scraper.scrapeDocument(document);
 }

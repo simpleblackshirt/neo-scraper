@@ -32,7 +32,7 @@ export default class Gelbooru extends ScrapeEngineBase {
 
   scrapeDocument(document: Document): ScrapeResult {
     const result = new ScrapeResult(this.name);
-    let version: Version | null = null;
+    let version: Version | null;
     switch (document.location.host) {
       case "safebooru.org":
       case "rule34.xxx":

@@ -77,7 +77,8 @@ describe("get pixiv post 96268450 (multipage, expanded)", () => {
     await expect(page).toClick("button", { text: "Show all" });
     await page.waitForSelector(".gtm-expand-full-size-illust", { visible: true });
     // await jestPuppeteer.debug();
-    await page.waitForTimeout(2000);
+    // page.waitForTimeout() was removed in puppeteer 22
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     res = await scrapePage(pageUrl, page);
   });
 
