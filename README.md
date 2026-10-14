@@ -7,7 +7,7 @@ Scrape a booru-like post object from the DOM.
 | Engine | Sites | Features | Notes |
 |---|---|---|---|
 | animepictures | anime-pictures.net | content, resolution, tags, tag_category | Rating is assumed to be safe. |
-| bluesky | bsky.app | content |  |
+| bluesky | bsky.app | content, tags, tag_category | Hashtags become tags and the author's handle becomes an artist tag. Tags may be unavailable in the fullscreen image viewer when the post text is not rendered. |
 | danbooru | danbooru.donmai.us, safebooru.donmai.us, sonohara.donmai.us, hijiribe.donmai.us | content, rating, resolution, tags, tag_category, source, notes |  |
 | e621 | e621.net, e926.net, e6ai.net | content, rating, resolution, tags, tag_category, source |  |
 | E-hentai | e-hentai.org, exhentai.org | content, resolution, extra_content, cookies | Rating is assumed to be unsafe. |
