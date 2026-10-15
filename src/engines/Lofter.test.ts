@@ -52,6 +52,85 @@ describe("get lofter post (fixture)", () => {
   });
 });
 
+describe("exclude lofter avatar noise (fixture)", () => {
+  const pageUrl = "https://5159468402.lofter.com/post/874575ad_34f7d6b85";
+  const contentImg = "https://imglf4.lf127.net/img/gallery/full.jpg";
+  const html = `<html><body>
+    <div class="selfinfo">
+      <div class="logo"><a href="/"><img src="https://avaimg.lf127.net/img/0b5fb48b60202e02/artist.jpg?imageView&amp;thumbnail=96x96&amp;quality=90&amp;type=jpg"><i></i></a></div>
+      <h1><a href="/">好的</a></h1>
+      <div class="text">谢谢你的评论和喜欢( ´ ▽｀)♡</div>
+    </div>
+    <div class="block photo">
+      <div class="side">
+        <div class="day"><a href="https://5159468402.lofter.com/post/874575ad_34f7d6b85">16</a></div>
+        <div class="month"><a href="https://5159468402.lofter.com/post/874575ad_34f7d6b85">10</a></div>
+      </div>
+      <div class="main">
+        <div class="content">
+          <div class="img">
+            <a href="#" class="imgclasstag" imggroup="gal" bigimgwidth="3527" bigimgheight="2619"
+               bigimgsrc="https://imglf4.lf127.net/img/gallery/full.jpg?imageView&amp;thumbnail=1680x0&amp;quality=96&amp;stripmeta=0&amp;type=jpg">
+              <img src="https://imglf4.lf127.net/img/gallery/thumb.jpg?imageView&amp;thumbnail=500x500&amp;quality=96&amp;stripmeta=0&amp;type=jpg">
+            </a>
+            <p class="desc"></p>
+          </div>
+          <div class="img">
+            <img src="https://imglf4.lf127.net/img/gallery/full.jpg?imageView&amp;thumbnail=1680x0&amp;quality=96&amp;stripmeta=0&amp;type=jpg">
+          </div>
+          <div class="text"><p id="p_u95mv9iabav">Snow&nbsp;was&nbsp;general&nbsp;all&nbsp;over&nbsp;Tara</p></div>
+        </div>
+        <div class="tag">
+          <a href="https://5159468402.lofter.com/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F">● 明日方舟</a>
+        </div>
+      </div>
+    </div>
+    <div class="main comment" id="comment">
+      <h3 class="nctitle">评论(1)</h3>
+      <div class="comment-item"><img src="https://imglf1.lf127.net/img/commenter_icon.jpg?imageView&amp;thumbnail=48y48"></div>
+    </div>
+    <ol class="notes">
+      <li class="note like">
+        <a href="//wuyu057267.lofter.com/" title="无语 - 半小时前"><img class="avatar" src="https://avaimg.lf127.net/img/739df8a7ae9618fa/liker1.jpg?imageView&amp;thumbnail=16y16"></a>
+        <span class="action"><a href="//wuyu057267.lofter.com/" title="无语 - 半小时前">无语</a> 很喜欢此图片</span>
+        <div class="clear"></div>
+      </li>
+      <li class="note like">
+        <a href="//yuqiu85726.lofter.com/" title="yuqiu - 4小时前"><img class="avatar" src="https://lofter.lf127.net/1653290601208/avatar_default.jpg?imageView&amp;thumbnail=16y16"></a>
+        <span class="action"><a href="//yuqiu85726.lofter.com/" title="yuqiu - 4小时前">yuqiu</a> 很喜欢此图片</span>
+        <div class="clear"></div>
+      </li>
+      <li class="note share">
+        <a href="//jinmu20902.lofter.com/" title="北极圈寻粮真君 - 5小时前"><img class="avatar" src="https://avaimg.lf127.net/img/36aa6fcc2b6fe396/liker2.jpg?imageView&amp;thumbnail=16y16"></a>
+        <span class="action"><a href="//jinmu20902.lofter.com/" title="北极圈寻粮真君 - 5小时前">北极圈寻粮真君</a> 推荐了此图片</span>
+        <div class="clear"></div>
+      </li>
+    </ol>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("should find exactly one post (avatars excluded, duplicate images removed)", () => {
+    expect(res.posts.length).toBe(1);
+  });
+
+  it("should prefer the anchor's bigimgsrc as the original image", () => {
+    expect(res.posts[0].contentUrl).toBe(contentImg);
+  });
+
+  it("should not scrape any avatars", () => {
+    expect(res.posts.find((x) => /avaimg|avatar/i.test(x.contentUrl))).toBeUndefined();
+  });
+
+  it("should still have tags and the artist tag", () => {
+    expect(res.posts[0]).toHaveTag("明日方舟");
+    expect(res.posts[0]).toHaveTag("5159468402", "artist");
+  });
+});
+
 describe("get lofter video post (fixture)", () => {
   const pageUrl = "https://someblog.lofter.com/post/1e8c2_def456";
   const html = `<html><body>
