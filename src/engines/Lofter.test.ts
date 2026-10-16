@@ -131,6 +131,72 @@ describe("exclude lofter avatar noise (fixture)", () => {
   });
 });
 
+describe("get lofter post with lazy-loaded images (fixture)", () => {
+  // Log pages lazy-load the images after the first: src holds a data-URI
+  // placeholder and the real CDN url only sits in data-src /
+  // data-lazy-src / data-original / data-origin-src until the image
+  // scrolls into view.
+  const pageUrl = "https://someblog.lofter.com/post/1e8c2_lzy";
+  const placeholder = "data:image/gif;base64,R0lGODlhAQABAAAAACw";
+  const html = `<html><body>
+    <header><a href="https://someblog.lofter.com/"><img class="avatar" src="${placeholder}" data-src="https://avaimg.lf127.net/img/lazy_icon.jpg?imageView&amp;thumbnail=48y48"></a></header>
+    <div class="content">
+      <img src="https://imglf1.lf127.net/img/aaa.png?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=1">
+      <img src="${placeholder}" data-src="https://imglf6.lf127.net/img/bbb.jpg?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=1">
+      <img src="${placeholder}" data-lazy-src="https://imglf3.lf127.net/img/ccc.jpg?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=1">
+      <img src="${placeholder}" data-original="https://imglf2.lf127.net/img/ddd.jpg?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=1">
+      <img src="${placeholder}" data-origin-src="https://imglf5.lf127.net/img/eee.jpg?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=1">
+    </div>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("should read the real image urls from the lazy attributes", () => {
+    expect(res.posts.map((x) => x.contentUrl)).toEqual([
+      "https://imglf1.lf127.net/img/aaa.png",
+      "https://imglf6.lf127.net/img/bbb.jpg",
+      "https://imglf3.lf127.net/img/ccc.jpg",
+      "https://imglf2.lf127.net/img/ddd.jpg",
+      "https://imglf5.lf127.net/img/eee.jpg",
+    ]);
+  });
+
+  it("should not scrape the lazy-loaded avatar", () => {
+    expect(res.posts.find((x) => /avaimg|avatar/i.test(x.contentUrl))).toBeUndefined();
+  });
+});
+
+describe("keep gallery images under a shared bigimgsrc anchor separate (fixture)", () => {
+  // Some themes/lightboxes wrap several content images in ONE anchor that
+  // carries bigimgsrc; adopting it for every wrapped img would resolve all
+  // of them to the same url and the dedup would collapse the gallery to a
+  // single post.
+  const pageUrl = "https://someblog.lofter.com/post/1e8c2_shr";
+  const html = `<html><body>
+    <div class="content">
+      <a href="#" bigimgsrc="https://imglf4.lf127.net/img/shared/lightbox.jpg?imageView&amp;thumbnail=1680x0&amp;quality=96&amp;stripmeta=0&amp;type=jpg">
+        <img src="https://imglf4.lf127.net/img/shared/one.jpg?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=0&amp;type=jpg">
+        <img src="https://imglf4.lf127.net/img/shared/two.jpg?imageView&amp;thumbnail=500x0&amp;quality=96&amp;stripmeta=0&amp;type=jpg">
+      </a>
+    </div>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("should emit one post per wrapped image instead of one collapsed post", () => {
+    expect(res.posts.map((x) => x.contentUrl)).toEqual([
+      "https://imglf4.lf127.net/img/shared/one.jpg",
+      "https://imglf4.lf127.net/img/shared/two.jpg",
+    ]);
+  });
+});
+
 describe("get lofter video post (fixture)", () => {
   const pageUrl = "https://someblog.lofter.com/post/1e8c2_def456";
   const html = `<html><body>
