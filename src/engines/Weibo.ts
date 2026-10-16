@@ -10,6 +10,20 @@ export function upgradeSinaImageUrl(url: string) {
 }
 
 /**
+ * Downgrades a sinaimg.cn image url from its /large/ rendition to /mw2000/
+ * (same pic id and extension). Consumers use this as a fallback url when
+ * fetching /large/ fails; urls without a /large/ segment pass through.
+ */
+export function downgradeSinaImageUrl(url: string) {
+  return url.replace(/\/large\//, "/mw2000/");
+}
+
+// Sinaimg.cn hotlink protection 403s direct media requests without a weibo
+// referer; the desktop origin is the known-good value for every weibo page
+// host (mobile pages included). Weibo's other media CDNs tolerate the header.
+const weiboReferer = "https://weibo.com/";
+
+/**
  * Extracts the topic name from a weibo hashtag text like "#SomeTopic#".
  */
 function topicNameFromText(text: string): string | undefined {
@@ -190,6 +204,7 @@ export default class Weibo extends ScrapeEngineBase {
       post.contentType = "video";
       post.sources = [source];
       post.tags = tags.slice();
+      post.referrer = weiboReferer;
       result.tryAddPost(post);
       return result;
     }
@@ -234,6 +249,7 @@ export default class Weibo extends ScrapeEngineBase {
       post.contentType = guessContentType(contentUrl);
       post.sources = [source];
       post.tags = tags.slice();
+      post.referrer = weiboReferer;
       result.tryAddPost(post);
     }
 

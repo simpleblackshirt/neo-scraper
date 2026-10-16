@@ -1,12 +1,19 @@
 import { ScrapeResults } from "../ScrapeEngine.js";
 import { scrapeFixture } from "../test/fixture.js";
-import { upgradeSinaImageUrl } from "./Weibo.js";
+import { downgradeSinaImageUrl, upgradeSinaImageUrl } from "./Weibo.js";
 
 test("upgradeSinaImageUrl", () => {
   expect(upgradeSinaImageUrl("https://wx1.sinaimg.cn/mw2000/abc/def.jpg")).toBe("https://wx1.sinaimg.cn/large/abc/def.jpg");
   expect(upgradeSinaImageUrl("https://wx2.sinaimg.cn/orj480/abc/ghi.jpg")).toBe("https://wx2.sinaimg.cn/large/abc/ghi.jpg");
   expect(upgradeSinaImageUrl("https://wx3.sinaimg.cn/thumb180/abc/jkl.jpg")).toBe("https://wx3.sinaimg.cn/large/abc/jkl.jpg");
   expect(upgradeSinaImageUrl("https://wx1.sinaimg.cn/large/abc/def.jpg")).toBe("https://wx1.sinaimg.cn/large/abc/def.jpg");
+});
+
+test("downgradeSinaImageUrl", () => {
+  expect(downgradeSinaImageUrl("https://wx1.sinaimg.cn/large/abc/def.jpg")).toBe("https://wx1.sinaimg.cn/mw2000/abc/def.jpg");
+  // Renditions without a /large/ segment have no fallback variant and pass through.
+  expect(downgradeSinaImageUrl("https://wx2.sinaimg.cn/mw2000/abc/ghi.jpg")).toBe("https://wx2.sinaimg.cn/mw2000/abc/ghi.jpg");
+  expect(downgradeSinaImageUrl("https://wx3.sinaimg.cn/orj480/abc/jkl.jpg")).toBe("https://wx3.sinaimg.cn/orj480/abc/jkl.jpg");
 });
 
 describe("get weibo status (fixture)", () => {
@@ -48,6 +55,11 @@ describe("get weibo status (fixture)", () => {
   it("should have the status url as source", () => {
     expect(res.posts[0]).toHaveSource(pageUrl);
   });
+
+  it("should declare the weibo referer (sinaimg hotlink protection)", () => {
+    expect(res.posts[0].referrer).toBe("https://weibo.com/");
+    expect(res.posts[1].referrer).toBe("https://weibo.com/");
+  });
 });
 
 describe("get weibo video status (fixture)", () => {
@@ -66,6 +78,10 @@ describe("get weibo video status (fixture)", () => {
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentType).toBe("video");
     expect(res.posts[0].contentUrl).toBe("https://f.video.weibocdn.com/xxx.mp4?Expires=0");
+  });
+
+  it("should declare the weibo referer on the video post", () => {
+    expect(res.posts[0].referrer).toBe("https://weibo.com/");
   });
 });
 
