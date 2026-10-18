@@ -58,4 +58,44 @@ export default class NeoScraper {
 
     return res;
   }
+
+  /**
+   * Scrapes the post container surrounding a context-menu target element.
+   * Routes to the first engine claiming the target's document location that
+   * supports element-scoped scraping. Returns empty results when no engine
+   * applies or when the target sits outside any post container; engines
+   * without the element members are skipped, never crash.
+   */
+  scrapeElement(target: Element): ScrapeResults {
+    const res = new ScrapeResults();
+
+    const doc = target.ownerDocument;
+    if (!doc) {
+      return res;
+    }
+
+    for (const engine of this.engines) {
+      if (!engine.canImport(doc.location)) {
+        continue;
+      }
+      if (!engine.findPostContainer || !engine.scrapeElement) {
+        console.log(`[${engine.name}] Does not support element grabs, skipping.`);
+        continue;
+      }
+
+      console.log("Using engine: " + engine.name);
+      const container = engine.findPostContainer(target);
+      if (!container) {
+        console.log(`[${engine.name}] Target element is not inside a post container.`);
+        return res;
+      }
+
+      res.results.push(engine.scrapeElement(container));
+      console.dir(res);
+
+      return res;
+    }
+
+    return res;
+  }
 }
