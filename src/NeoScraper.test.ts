@@ -26,7 +26,7 @@ class StubElementEngine extends ScrapeEngineBase {
   supportedHosts = ["example.com"];
   containerSelector = ".post";
 
-  scrapeDocument(document: Document): ScrapeResult {
+  scrapeDocument(_document: Document): ScrapeResult {
     return new ScrapeResult(this.name);
   }
 
@@ -50,7 +50,7 @@ class StubDocumentOnlyEngine extends ScrapeEngineBase {
   notes: string[] = [];
   supportedHosts = ["example.com"];
 
-  scrapeDocument(document: Document): ScrapeResult {
+  scrapeDocument(_document: Document): ScrapeResult {
     return new ScrapeResult(this.name);
   }
   // No findPostContainer/scrapeElement: the optional members stay unset.

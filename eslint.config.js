@@ -26,6 +26,9 @@ export default [
       ...tsPlugin.configs.recommended.rules,
       // Downgraded to a warning to match the previous typescript-eslint v5 preset.
       "@typescript-eslint/no-explicit-any": "warn",
+      // Conventional underscore-prefixed args mark intentionally unused params
+      // (e.g. stub engines implementing only the document path).
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       // TypeScript itself reports undefined globals; no-undef only produces
       // false positives for jest/DOM globals in TS files.
       "no-undef": "off",
