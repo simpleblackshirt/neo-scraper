@@ -142,8 +142,12 @@ describe("element grab: single-image tweet", () => {
     expect(res.posts[0]).toHaveSource("https://x.com/ArtistOne/status/111");
   });
 
-  it("pageUrl is the page the element was grabbed on", () => {
-    expect(res.posts[0].pageUrl).toBe(pageUrl);
+  it("pageUrl is the tweet's canonical permalink (never the browsing page)", () => {
+    expect(res.posts[0].pageUrl).toBe("https://x.com/ArtistOne/status/111");
+  });
+
+  it("uploads from client-fetched content (Twitter CDNs 403 server-side downloads)", () => {
+    expect(res.posts[0].uploadMode).toBe("content");
   });
 });
 
@@ -226,6 +230,42 @@ describe("element grab: the quote card is its own target", () => {
     expect(res.posts[0]).toHaveSource("https://x.com/QuotedAuthor/status/1971047002982043938");
     expect(res.posts[0]).toHaveTag("quotedauthor", "artist");
     expect(res.posts[0].tags.find((x) => x.name == "outerauthor")).toBeUndefined();
+  });
+});
+
+describe("element grab: quote card detection without the A/B testid", () => {
+  // Same tweet as above, but the card renders WITHOUT the
+  // testCondensedMedia testid (A/B flag) - detection must be id-based.
+  const bareCardHtml = `<html><body>
+    <article data-testid="tweet" tabindex="0">
+      <div data-testid="User-Name">
+        <a href="/OuterAuthor"><span>Outer Author</span></a>
+        <a href="/OuterAuthor/status/2112030985659298231"><time datetime="2026-10-19T04:00:01.000Z">5h</time></a>
+      </div>
+      <a role="link" href="/OuterAuthor/status/2112030985659298231/photo/1">
+        <div data-testid="tweetPhoto"><img alt="Image" src="https://pbs.twimg.com/media/OWN?format=jpg&amp;name=small"></div>
+      </a>
+      <div role="link">
+        <a role="link" href="/QuotedAuthor/status/1971047002982043938/photo/1">
+          <div data-testid="tweetPhoto"><img alt="Image" src="https://pbs.twimg.com/media/QUOTED?format=jpg&amp;name=240x240"></div>
+        </a>
+      </div>
+    </article>
+    </body></html>`;
+
+  it("grabs the quoted tweet when its image is clicked", () => {
+    const res = scrapeElementFixture("https://x.com/home", bareCardHtml, "img[src*='QUOTED']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/QUOTED?format=jpg&name=orig");
+    expect(res.posts[0]).toHaveSource("https://x.com/QuotedAuthor/status/1971047002982043938");
+    expect(res.posts[0]).toHaveTag("quotedauthor", "artist");
+  });
+
+  it("grabs the outer tweet (quote excluded) when its own image is clicked", () => {
+    const res = scrapeElementFixture("https://x.com/home", bareCardHtml, "img[src*='OWN']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/OWN?format=jpg&name=orig");
+    expect(res.posts[0]).toHaveSource("https://x.com/OuterAuthor/status/2112030985659298231");
   });
 });
 

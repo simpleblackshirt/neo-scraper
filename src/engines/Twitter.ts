@@ -95,35 +95,44 @@ export default class Twitter extends ScrapeEngineBase {
   notes = [
     "Hashtags become tags and the author's handle becomes an artist tag.",
     "X redesigns its DOM frequently, so this engine can break at any time.",
-    "Element grabs (context menu): condensed quote cards are their own grab target, and video-only tweets are skipped because the real mp4 never reaches the DOM (blob: MSE streaming).",
+    "Element grabs (context menu): quote cards are their own grab target, video-only tweets are skipped because the real mp4 never reaches the DOM (blob: MSE streaming), and posts upload from client-fetched content because Twitter's CDNs intermittently 403 server-side downloads.",
   ];
   supportedHosts = ["twitter.com", "mobile.twitter.com", "x.com"];
 
   /**
    * Container resolution for context-menu element grabs, in priority order:
-   * 1. a condensed quote card (right-clicking the quoted art grabs the quoted tweet),
-   * 2. the tweet article,
-   * 3. the lightbox dialog (focused-image clicks land outside any article).
+   * 1. the tweet article - UNLESS the clicked element links to a status other
+   *    than the article's own (embedded quote card), in which case the quote
+   *    card is the post (right-clicking the quoted art grabs the quoted tweet),
+   * 2. the lightbox dialog (focused-image clicks land outside any article).
+   *
+   * Quote detection is status-id based on purpose: the card's
+   * testCondensedMedia testid is an A/B flag and cannot be relied on.
    */
   findPostContainer(target: Element): Element | null {
-    return (
-      target.closest("[data-testid='testCondensedMedia']") ??
-      target.closest("article[data-testid='tweet']") ??
-      target.closest("div[role=dialog]")
-    );
+    const article = target.closest("article[data-testid='tweet']");
+    if (!article) {
+      return target.closest("div[role=dialog]");
+    }
+
+    const ownStatusId = statusIdFromHref(statusUrlFromArticle(article));
+    const enclosingStatusId = statusIdFromHref(target.closest("a[href*='/status/']")?.getAttribute("href"));
+    if (ownStatusId && enclosingStatusId && enclosingStatusId !== ownStatusId) {
+      return target.closest("[data-testid='testCondensedMedia']") ?? target.closest("a[href*='/status/']")?.parentElement ?? article;
+    }
+
+    return article;
   }
 
   scrapeElement(container: Element): ScrapeResult {
-    if (container.getAttribute("data-testid") === "testCondensedMedia") {
-      return this.scrapeQuoteCard(container);
-    }
     if (container.matches("article[data-testid='tweet']")) {
       return this.scrapeTweetArticle(container);
     }
     if (container.getAttribute("role") === "dialog") {
       return this.scrapeLightbox(container);
     }
-    return new ScrapeResult(this.name);
+    // Quote cards (testid or bare link-parent wrappers alike).
+    return this.scrapeQuoteCard(container);
   }
 
   /**
@@ -140,11 +149,12 @@ export default class Twitter extends ScrapeEngineBase {
 
     for (const img of Array.from(card.querySelectorAll<HTMLImageElement>("div[data-testid='tweetPhoto'] img"))) {
       const post = new ScrapedPost();
-      post.pageUrl = pageUrlFrom(card);
+      post.pageUrl = source ?? pageUrlFrom(card);
       post.contentUrl = getOriginalImageUrl(img).href;
       post.contentType = "image";
       post.sources = source ? [source] : [];
       post.tags = artist ? [artist] : [];
+      post.uploadMode = "content";
       result.tryAddPost(post);
     }
 
@@ -157,7 +167,10 @@ export default class Twitter extends ScrapeEngineBase {
     const hashtags = hashtagsFromArticle(article);
     const source = statusUrlFromArticle(article);
     const tags = artist ? hashtags.concat([artist]) : hashtags.slice();
-    const pageUrl = pageUrlFrom(article);
+    // Element grabs identify ONE post: pageUrl is its canonical permalink (not
+    // the browsing page), so the popup's append-page-url-to-source dedup never
+    // adds timeline/profile noise to the source.
+    const pageUrl = source ?? pageUrlFrom(article);
 
     for (const contentUrl of ownPhotoUrls(article)) {
       const post = new ScrapedPost();
@@ -166,6 +179,9 @@ export default class Twitter extends ScrapeEngineBase {
       post.contentType = "image";
       post.sources = source ? [source] : [];
       post.tags = tags.slice();
+      // Twitter's CDNs intermittently 403 server-side downloads (rate limits
+      // and header filtering) - the client fetches the bytes instead.
+      post.uploadMode = "content";
       result.tryAddPost(post);
     }
 
@@ -187,7 +203,7 @@ export default class Twitter extends ScrapeEngineBase {
     const hashtags = article ? hashtagsFromArticle(article) : [];
     const source = article ? statusUrlFromArticle(article) : undefined;
     const tags = artist ? hashtags.concat([artist]) : hashtags.slice();
-    const pageUrl = pageUrlFrom(dialog);
+    const pageUrl = source ?? pageUrlFrom(dialog);
 
     const seenUrls = new Set<string>();
     const addPost = (contentUrl: string) => {
@@ -202,6 +218,7 @@ export default class Twitter extends ScrapeEngineBase {
       post.contentType = "image";
       post.sources = source ? [source] : [];
       post.tags = tags.slice();
+      post.uploadMode = "content";
       result.tryAddPost(post);
     };
 
