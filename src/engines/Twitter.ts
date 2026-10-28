@@ -101,13 +101,17 @@ export default class Twitter extends ScrapeEngineBase {
 
   /**
    * Container resolution for context-menu element grabs, in priority order:
-   * 1. the tweet article - UNLESS the clicked element links to a status other
-   *    than the article's own (embedded quote card), in which case the quote
-   *    card is the post (right-clicking the quoted art grabs the quoted tweet),
+   * 1. the tweet article - UNLESS the clicked element sits inside an embedded
+   *    quote card, in which case the card is the post (right-clicking the
+   *    quoted art or text grabs the quoted tweet),
    * 2. the lightbox dialog (focused-image clicks land outside any article).
    *
    * Quote detection is status-id based on purpose: the card's
-   * testCondensedMedia testid is an A/B flag and cannot be relied on.
+   * testCondensedMedia testid is an A/B flag and cannot be relied on. The card
+   * is found by climbing to the outermost ancestor that contains only FOREIGN
+   * status links (links into a status other than the article's own): the next
+   * level up always also contains the article's own landmarks. This covers
+   * quoted text too, which is not itself wrapped in a status link.
    */
   findPostContainer(target: Element): Element | null {
     const article = target.closest("article[data-testid='tweet']");
@@ -116,9 +120,36 @@ export default class Twitter extends ScrapeEngineBase {
     }
 
     const ownStatusId = statusIdFromHref(statusUrlFromArticle(article));
-    const enclosingStatusId = statusIdFromHref(target.closest("a[href*='/status/']")?.getAttribute("href"));
-    if (ownStatusId && enclosingStatusId && enclosingStatusId !== ownStatusId) {
-      return target.closest("[data-testid='testCondensedMedia']") ?? target.closest("a[href*='/status/']")?.parentElement ?? article;
+    if (ownStatusId) {
+      let node: Element = target;
+      let card: Element | null = null;
+      while (true) {
+        const parent = node.parentElement;
+        if (!parent || parent === article) {
+          break;
+        }
+        // "Contains status links" includes the parent itself: the clicked
+        // image's parent is often the status link, which querySelectorAll
+        // alone would miss.
+        const statusLinks = parent.matches("a[href*='/status/']")
+          ? [parent as HTMLAnchorElement, ...Array.from(parent.querySelectorAll("a[href*='/status/']"))]
+          : Array.from(parent.querySelectorAll("a[href*='/status/']"));
+        // Climb through link-less structural wrappers; remember the outermost
+        // ancestor holding only foreign status links; stop at the first
+        // ancestor that also carries the article's OWN status links (its
+        // layout), which is exactly the card boundary.
+        if (statusLinks.some((link) => statusIdFromHref(link.getAttribute("href")) === ownStatusId)) {
+          break;
+        }
+        if (statusLinks.length > 0) {
+          card = parent;
+        }
+        node = parent;
+      }
+      if (card) {
+        // Cap at the A/B card testid when present - it is the tighter container.
+        return card.closest("[data-testid='testCondensedMedia']") ?? card;
+      }
     }
 
     return article;
