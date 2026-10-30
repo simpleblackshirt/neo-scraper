@@ -646,3 +646,86 @@ describe("element grab: text-only card yields nothing", () => {
     expect(res.posts.length).toBe(0);
   });
 });
+
+describe("element grab: gif grid beats the hidden low-res remux", () => {
+  // Live capture (weibo-1793393630473.html): a 9-image gif post pre-open -
+  // woo-picture placeholders, _customPoster gif images, a focus image, and a
+  // hidden gif mp4 remux at template=500x726. The video-wins rule used to
+  // collapse the grab to that single remux.
+  const html = `<html><body>
+    <div>
+      <div class="woo-box-flex">
+        <a href="//weibo.com/u/6279793937" usercard="6279793937"><span>明日方舟Arknights</span></a>
+        <a href="https://weibo.com/6279793937/Rp3WZfMbp"><span>5小时前</span></a>
+      </div>
+      <img class="_focusImg" src="https://wx4.sinaimg.cn/orj360/006QZngZgy1iikcen7nhjj31hc0u04qm.jpg">
+      <img class="woo-picture-img" src="data:image/svg+xml;utf-8,placeholder" data-src="false">
+      <img class="_customPoster" src="https://wx1.sinaimg.cn/orj360/006QZngZgy1iikceskekfg30dw0k5qva.gif">
+      <img class="woo-picture-img" src="data:image/svg+xml;utf-8,placeholder" data-src="false">
+      <img class="_customPoster" src="https://wx4.sinaimg.cn/orj360/006QZngZgy1iikceu9vfjg30dw0k51a0.gif">
+      <video><source src="https://g.us.sinaimg.cn/o0/remux.mp4?label=gif_mp4&amp;template=500x726.28.0"></video>
+    </div>
+    </body></html>`;
+
+  it("grabs the focus image and the gif posters, never the remux", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "img[src*='iikceskekfg']");
+    expect(res.posts.length).toBe(3);
+    expect(res.posts.map((p) => p.contentType)).toEqual(["image", "image", "image"]);
+    expect(res.posts[0].contentUrl).toBe("https://wx4.sinaimg.cn/large/006QZngZgy1iikcen7nhjj31hc0u04qm.jpg");
+    expect(res.posts[1].contentUrl).toBe("https://wx1.sinaimg.cn/large/006QZngZgy1iikceskekfg30dw0k5qva.gif");
+    expect(res.posts[2].contentUrl).toBe("https://wx4.sinaimg.cn/large/006QZngZgy1iikceu9vfjg30dw0k51a0.gif");
+    expect(res.posts.find((p) => p.contentType == "video")).toBeUndefined();
+    expect(res.posts.every((p) => p.uploadMode == "content")).toBe(true);
+  });
+});
+
+describe("element grab: gif post embedded in a repost", () => {
+  const html = `<html><body>
+    <div>
+      <div class="woo-box-flex">
+        <a href="//weibo.com/u/5208034187" usercard="5208034187"><span>Reposter</span></a>
+        <a href="https://weibo.com/5208034187/RoYhnj5Oi"><span>20小时前</span></a>
+      </div>
+      <div class="retweet">
+        <a href="/u/6279793937" usercard="6279793937"><span>明日方舟Arknights</span></a>
+        <img class="_customPoster" src="https://wx1.sinaimg.cn/orj360/006QZngZgy1iikceskekfg30dw0k5qva.gif">
+        <video><source src="https://g.us.sinaimg.cn/o0/remux.mp4?label=gif_mp4&amp;template=500x726.28.0"></video>
+        <a href="https://weibo.com/6279793937/Rp3WZfMbp"><span>5小时前</span></a>
+      </div>
+    </div>
+    </body></html>`;
+
+  it("grabs the embedded gif (not the remux) with the original's metadata", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "img[src*='iikceskekfg']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://wx1.sinaimg.cn/large/006QZngZgy1iikceskekfg30dw0k5qva.gif");
+    expect(res.posts[0]).toHaveTag("明日方舟arknights", "artist");
+    expect(res.posts[0]).toHaveSource("https://weibo.com/6279793937/Rp3WZfMbp");
+  });
+});
+
+describe("toolbar grab on a gif post page (fixture)", () => {
+  // Document path parity: the remux must not collapse the page grab.
+  const pageUrl = "https://weibo.com/6279793937/Rp3WZfMbp";
+  const html = `<html><body>
+    <article>
+      <header><a href="//weibo.com/u/6279793937" usercard="6279793937"><span>明日方舟Arknights</span></a></header>
+      <div class="wbpro-feed-content">
+        <img class="_customPoster" src="https://wx1.sinaimg.cn/orj360/006QZngZgy1iikceskekfg30dw0k5qva.gif">
+        <img class="_customPoster" src="https://wx4.sinaimg.cn/orj360/006QZngZgy1iikceu9vfjg30dw0k51a0.gif">
+      </div>
+      <div><video><source src="https://g.us.sinaimg.cn/o0/remux.mp4?label=gif_mp4"></video></div>
+    </article>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("grabs the gif images instead of the remux", () => {
+    expect(res.posts.length).toBe(2);
+    expect(res.posts.every((p) => p.contentType == "image")).toBe(true);
+    expect(res.posts[0].contentUrl).toBe("https://wx1.sinaimg.cn/large/006QZngZgy1iikceskekfg30dw0k5qva.gif");
+  });
+});

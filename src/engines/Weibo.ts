@@ -288,11 +288,11 @@ export default class Weibo extends ScrapeEngineBase {
       return post;
     };
 
-    if (videoSrc) {
-      result.tryAddPost(buildPost(videoSrc, "video"));
-      return result;
-    }
-
+    // Content images first: gif posts render their animated gifs as poster
+    // images plus hidden low-res gif mp4 remuxes (label=gif_mp4) - the images
+    // are the actual artwork (full animated gifs at /large/) and win over the
+    // remux. Plain video posts (static poster) keep the video preference.
+    const contentUrls: string[] = [];
     const seen = new Set<string>();
     for (const img of Array.from(card.querySelectorAll("img"))) {
       if (insideNestedCard(img, card, baseUrl)) {
@@ -307,7 +307,17 @@ export default class Weibo extends ScrapeEngineBase {
         continue;
       }
       seen.add(contentUrl);
+      contentUrls.push(contentUrl);
+    }
 
+    const hasGifPoster = contentUrls.some((x) => /\.gif(\?|$)/i.test(x));
+
+    if (videoSrc && !hasGifPoster) {
+      result.tryAddPost(buildPost(videoSrc, "video"));
+      return result;
+    }
+
+    for (const contentUrl of contentUrls) {
       result.tryAddPost(buildPost(contentUrl, guessContentType(contentUrl)));
     }
 
@@ -381,10 +391,8 @@ export default class Weibo extends ScrapeEngineBase {
 
     const source = document.location.origin + path;
 
-    // Video content, if present. Video posts also render poster thumbnails,
-    // so when a status video is found we skip the images. Stray players are
-    // ignored: only a video in the content area pointing at one of weibo's
-    // own media CDNs counts.
+    // Video content, if present. Stray players are ignored: only a video in
+    // the content area pointing at one of weibo's own media CDNs counts.
     let videoSrc: string | undefined = undefined;
     const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video")).filter(
       (x) => !x.closest("header, nav, footer, aside, [class*='avatar']")
@@ -404,18 +412,6 @@ export default class Weibo extends ScrapeEngineBase {
         videoSrc = found;
         break;
       }
-    }
-
-    if (videoSrc) {
-      const post = new ScrapedPost();
-      post.pageUrl = document.location.href;
-      post.contentUrl = videoSrc;
-      post.contentType = "video";
-      post.sources = [source];
-      post.tags = tags.slice();
-      post.referrer = weiboReferer;
-      result.tryAddPost(post);
-      return result;
     }
 
     // Images. The positive scan is scoped to the post article: comment
@@ -442,6 +438,11 @@ export default class Weibo extends ScrapeEngineBase {
       imgUrls.push(...sinaUrlsFrom(Array.from(document.querySelectorAll<HTMLImageElement>("img"))));
     }
 
+    // Gif posts render their animated gifs as poster images plus hidden
+    // low-res gif mp4 remuxes (label=gif_mp4) - the gifs at /large/ are the
+    // actual artwork and win over the remux. Plain video posts (static
+    // poster) keep the video preference.
+    const contentUrls: string[] = [];
     for (const rawUrl of imgUrls) {
       if (!rawUrl) {
         continue;
@@ -451,7 +452,24 @@ export default class Weibo extends ScrapeEngineBase {
         continue;
       }
       seenUrls.add(contentUrl);
+      contentUrls.push(contentUrl);
+    }
+    const hasGifPoster = contentUrls.some((x) => /\.gif(\?|$)/i.test(x));
 
+    if (videoSrc && !hasGifPoster) {
+      const post = new ScrapedPost();
+      post.pageUrl = document.location.href;
+      post.contentUrl = videoSrc;
+      post.contentType = "video";
+      post.sources = [source];
+      post.tags = tags.slice();
+      post.referrer = weiboReferer;
+      post.uploadMode = "content";
+      result.tryAddPost(post);
+      return result;
+    }
+
+    for (const contentUrl of contentUrls) {
       const post = new ScrapedPost();
       post.pageUrl = document.location.href;
       post.contentUrl = contentUrl;
@@ -459,6 +477,7 @@ export default class Weibo extends ScrapeEngineBase {
       post.sources = [source];
       post.tags = tags.slice();
       post.referrer = weiboReferer;
+      post.uploadMode = "content";
       result.tryAddPost(post);
     }
 
