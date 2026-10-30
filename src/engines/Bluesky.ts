@@ -114,6 +114,42 @@ function permalinkFromElement(el: Element): string | undefined {
 }
 
 /**
+ * Extracts the post author's handle from a post url
+ * (`/profile/<handle>/post/<id>` - relative or absolute).
+ */
+function handleFromPostUrl(url: string): string | undefined {
+  const path = url.startsWith("http") ? new URL(url).pathname : url;
+  return path.match(/^\/profile\/([^/]+)\/post\/[^/]+$/)?.[1];
+}
+
+/**
+ * The post author's handle, derived from reliable sources in order: the
+ * scope's own permalink, the page path (a post open individually IS the
+ * canonical url), and only then the first profile link in the scope -
+ * permalink pages render OTHER users' profile links (liked-by lines) that
+ * would otherwise win in document order.
+ */
+function authorHandleFromScope(scope: Element, permalink: string | undefined): string | undefined {
+  if (permalink) {
+    const handle = handleFromPostUrl(permalink);
+    if (handle) {
+      return handle;
+    }
+  }
+  const path = scope.ownerDocument?.location?.pathname;
+  if (path) {
+    const handle = handleFromPostUrl(path);
+    if (handle) {
+      return handle;
+    }
+  }
+  const authorLink = Array.from(scope.querySelectorAll<HTMLAnchorElement>('a[href^="/profile/"]')).find(
+    (a) => handleFromProfileHref(a.getAttribute("href") ?? "") != undefined
+  );
+  return authorLink ? handleFromProfileHref(authorLink.getAttribute("href") ?? "") : undefined;
+}
+
+/**
  * Content media of a post container: feed thumbnails and fullsize images.
  * Excludes avatar images, which appear inside post scopes (author header) and
  * in standalone avatar scopes.
@@ -147,8 +183,19 @@ export default class Bluesky extends ScrapeEngineBase {
    * 3. the post container via the postScopeFromImg walk.
    */
   findPostContainer(target: Element): Element | null {
+    // The fullscreen viewer dialog is nested inside the app tree AND renders
+    // no metadata: check it first, and match the underlying post by blob id so
+    // the grab resolves the real post scope (falling back to the dialog for a
+    // content-only post when the post is not rendered behind it).
     const dialog = target.closest("[role='dialog']");
     if (dialog) {
+      const img = target.tagName === "IMG" ? (target as HTMLImageElement) : dialog.querySelector("img");
+      if (img) {
+        const scope = this.underlyingScopeForViewerImg(img);
+        if (scope) {
+          return scope;
+        }
+      }
       return dialog;
     }
     const card = target.closest(QUOTE_CARD_SELECTOR);
@@ -166,6 +213,26 @@ export default class Bluesky extends ScrapeEngineBase {
       }
     }
     return null;
+  }
+
+  /**
+   * The viewer dialog renders the same image the underlying post shows as a
+   * thumbnail - match by blob id (the last url path segment, unique per image)
+   * and resolve that image's post scope.
+   */
+  private underlyingScopeForViewerImg(img: HTMLImageElement): Element | undefined {
+    const blobId = img.src.split("/").pop();
+    if (!blobId) {
+      return undefined;
+    }
+    const doc = img.ownerDocument;
+    if (!doc) {
+      return undefined;
+    }
+    const match = Array.from(doc.querySelectorAll<HTMLImageElement>("img")).find(
+      (x) => x !== img && !x.closest("[role='dialog']") && x.src.split("/").pop() === blobId
+    );
+    return match ? postScopeFromImg(match) : undefined;
   }
 
   scrapeElement(container: Element): ScrapeResult {
@@ -210,10 +277,13 @@ export default class Bluesky extends ScrapeEngineBase {
 
   private scrapePostContainer(scope: Element): ScrapeResult {
     const result = new ScrapeResult(this.name);
-    const artist = artistFromElement(scope);
+    const permalink = permalinkFromElement(scope);
+    // The author comes from the permalink / page handle - profile links in the
+    // scope are unreliable on permalink pages (liked-by lines).
+    const authorHandle = authorHandleFromScope(scope, permalink);
+    const artist = authorHandle ? artistTagFromHandle(authorHandle) : artistFromElement(scope);
     const hashtags = hashtagsFromElement(scope);
     const tags = artist ? hashtags.concat([artist]) : hashtags.slice();
-    const permalink = permalinkFromElement(scope);
     // Element grabs identify ONE post: pageUrl is its canonical permalink when
     // the scope carries one, otherwise the page itself (a post's own page IS
     // the canonical url).
@@ -282,15 +352,26 @@ export default class Bluesky extends ScrapeEngineBase {
 
     for (const el of els) {
       const post = new ScrapedPost();
-      post.pageUrl = document.location.href;
       post.contentUrl = getFullSizeImg(el.src);
 
-      // Hashtags and the artist come from the post container that owns this image.
-      const scope = postScopeFromImg(el);
+      // Fullscreen viewer images live in a dialog without metadata - match
+      // the underlying post by blob id so artist/source still resolve.
+      const scope = el.closest("[role='dialog']")
+        ? this.underlyingScopeForViewerImg(el)
+        : postScopeFromImg(el);
       if (scope) {
+        const permalink = permalinkFromElement(scope);
+        const authorHandle = authorHandleFromScope(scope, permalink);
+        const artist = authorHandle ? artistTagFromHandle(authorHandle) : artistFromElement(scope);
         const hashtags = hashtagsFromElement(scope);
-        const artist = artistFromElement(scope);
         post.tags = artist ? hashtags.concat([artist]) : hashtags;
+        if (permalink) {
+          post.sources = [permalink];
+          post.pageUrl = permalink;
+        }
+      }
+      if (!post.pageUrl) {
+        post.pageUrl = document.location.href;
       }
 
       result.tryAddPost(post);

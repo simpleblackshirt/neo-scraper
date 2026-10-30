@@ -299,17 +299,95 @@ describe("element grab: post permalink page", () => {
   });
 });
 
-describe("element grab: fullscreen image viewer dialog", () => {
-  const pageUrl = "https://bsky.app/profile/shirohunter.bsky.social/post/3mymm7qawlc2q";
-  const fullsizeUrl =
-    "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:kh5pgiqrbrthfopzb7lubzm4/bafkreidyfltl4obb46mjtccoli4pmib";
+describe("element grab: permalink page with liked-by links", () => {
+  // Live e2e round 2 finding: on a post's own page the artist tag came from
+  // the "Liked by <liker>" link instead of the author. The author is derived
+  // from the page handle (/profile/<handle>/post/<id>), never from ambient
+  // profile links.
+  const pageUrl = "https://bsky.app/profile/author.bsky.social/post/3mauthorpost1";
+  const html = `<html><body>
+    <div data-testid="postThreadItem-by-author.bsky.social">
+      <a href="/profile/liker.bsky.social"><span>Liked by liker</span></a>
+      <img data-testid="userAvatarImage" src="https://cdn.bsky.app/img/avatar_thumbnail/plain/did:plc:author/bafkreiavatar">
+      <div><div><img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:author/bafkreiart"></div></div>
+      <a href="/profile/author.bsky.social/post/3mauthorpost1/liked-by"><span>12 likes</span></a>
+    </div>
+    </body></html>`;
+
+  it("resolves the artist from the page handle, not the liked-by link", () => {
+    const res = scrapeElementFixture(pageUrl, html, "img[src*='feed_thumbnail']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0]).toHaveTag("author", "artist");
+    expect(res.posts[0].tags.find((x) => x.name == "liker")).toBeUndefined();
+    expect(res.posts[0].sources).toEqual([]);
+    expect(res.posts[0].pageUrl).toBe(pageUrl);
+  });
+});
+
+describe("element grab: viewer with the underlying post rendered behind", () => {
+  const permalink = "https://bsky.app/profile/author.bsky.social/post/3mpost";
+  const html = `<html><body>
+    <div>
+      <a href="/profile/author.bsky.social"><span>Author</span></a>
+      <a href="/profile/author.bsky.social/post/3mpost"><span>1h</span></a>
+      <div><div><img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:author/bafkreiart"></div></div>
+      <div role="dialog">
+        <img src="https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:author/bafkreiart">
+      </div>
+    </div>
+    </body></html>`;
+
+  it("resolves the underlying post's scope for full metadata", () => {
+    // The viewer image and the post's thumbnail share the blob id
+    // (bafkreiart) - the grab reuses the real post scope.
+    const res = scrapeElementFixture("https://bsky.app/", html, "div[role='dialog'] img");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:author/bafkreiart");
+    expect(res.posts[0]).toHaveTag("author", "artist");
+    expect(res.posts[0]).toHaveSource(permalink);
+    expect(res.posts[0].pageUrl).toBe(permalink);
+  });
+});
+
+describe("toolbar grab with the viewer dialog open (fixture)", () => {
+  const permalink = "https://bsky.app/profile/author.bsky.social/post/3mpost";
+  const thumb = "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:author/bafkreiart";
+  const fullsize = "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:author/bafkreiart";
+  const html = `<html><body>
+    <div>
+      <a href="/profile/author.bsky.social"><span>Author</span></a>
+      <a href="/profile/author.bsky.social/post/3mpost"><span>1h</span></a>
+      <div><div><img src="${thumb}"></div></div>
+      <div role="dialog">
+        <img src="${fullsize}">
+      </div>
+    </div>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture("https://bsky.app/", html);
+  });
+
+  it("matches the underlying post by blob id for artist and source", () => {
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe(fullsize);
+    expect(res.posts[0]).toHaveTag("author", "artist");
+    expect(res.posts[0]).toHaveSource(permalink);
+    expect(res.posts[0].pageUrl).toBe(permalink);
+  });
+});
+
+describe("element grab: viewer without the underlying post rendered", () => {
+  const pageUrl = "https://bsky.app/profile/author.bsky.social/post/3mpost";
+  const fullsizeUrl = "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:author/bafkreilightbox";
   const html = `<html><body>
     <div role="dialog">
       <img src="${fullsizeUrl}">
     </div>
     </body></html>`;
 
-  it("grabs the focused image as a content-only post (dialog renders no metadata)", () => {
+  it("falls back to a content-only post", () => {
     const res = scrapeElementFixture(pageUrl, html, "div[role='dialog'] img");
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentUrl).toBe(fullsizeUrl);
