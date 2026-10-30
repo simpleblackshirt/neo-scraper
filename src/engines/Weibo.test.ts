@@ -1,5 +1,5 @@
 import { ScrapeResults } from "../ScrapeEngine.js";
-import { scrapeFixture } from "../test/fixture.js";
+import { scrapeElementFixture, scrapeFixture } from "../test/fixture.js";
 import { downgradeSinaImageUrl, upgradeSinaImageUrl } from "./Weibo.js";
 
 test("upgradeSinaImageUrl", () => {
@@ -475,6 +475,174 @@ describe("skip weibo feed pages (fixture)", () => {
   });
 
   it("should find no posts on non-status pages", () => {
+    expect(res.posts.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Element grabs (context menu). Structures from live captures (2026-10-30,
+// logged-in weibo.com desktop): see SzuruImporter
+// docs/plan/20261018-element-context-grab/dom-notes/weibo.md.
+// ---------------------------------------------------------------------------
+
+const timelineCardHtml = `<html><body>
+  <div class="css-g5y9jx">
+    <div class="woo-box-flex">
+      <a href="//weibo.com/u/3150932560" usercard="3150932560"><img src="https://tvax3.sinaimg.cn/crop.0.0.1080.1080.1024/bbcf6a50ly8fxug0g8dcbj20u00u0wg6.jpg?KID="></a>
+      <a href="//weibo.com/u/3150932560" usercard="3150932560"><span>_第七定义</span></a>
+      <a href="https://weibo.com/3150932560/RoVILhfCJ"><span>昨天 12:03</span></a>
+    </div>
+    <div>art post text</div>
+    <div><img src="https://wx4.sinaimg.cn/orj360/bbcf6a50gy1iijdptbdsnj20w1104qtp.jpg"></div>
+  </div>
+  </body></html>`;
+
+describe("element grab: single-image timeline card", () => {
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeElementFixture("https://weibo.com/", timelineCardHtml, "img[src*='orj360']");
+  });
+
+  it("finds exactly one post", () => {
+    expect(res.posts.length).toBe(1);
+  });
+
+  it("upgrades the orj360 rendition to /large/", () => {
+    expect(res.posts[0].contentUrl).toBe("https://wx4.sinaimg.cn/large/bbcf6a50gy1iijdptbdsnj20w1104qtp.jpg");
+  });
+
+  it("carries the display name as artist tag", () => {
+    expect(res.posts[0]).toHaveTag("_第七定义", "artist");
+  });
+
+  it("carries the canonical permalink as source and pageUrl", () => {
+    expect(res.posts[0]).toHaveSource("https://weibo.com/3150932560/RoVILhfCJ");
+    expect(res.posts[0].pageUrl).toBe("https://weibo.com/3150932560/RoVILhfCJ");
+  });
+
+  it("uploads from client-fetched content and declares the weibo referer", () => {
+    expect(res.posts[0].uploadMode).toBe("content");
+    expect(res.posts[0].referrer).toBe("https://weibo.com/");
+  });
+});
+
+describe("element grab: multi-image card", () => {
+  const html = `<html><body>
+    <div>
+      <div class="woo-box-flex">
+        <a href="//weibo.com/u/3291628783" usercard="3291628783"><span>离渚若寒</span></a>
+        <a href="https://weibo.com/3291628783/Mkk95elk5"><span>2022-12-19</span></a>
+      </div>
+      <div>
+        <img src="https://wx1.sinaimg.cn/orj360/c43244efgy1h998vnwsfhj21o0190e82.jpg">
+        <img src="https://wx1.sinaimg.cn/orj360/c43244efgy1h998vyeprfj21o0190qv5.jpg">
+        <img src="https://wx1.sinaimg.cn/orj360/c43244efgy1h998w808yjj21o0190qv5.jpg">
+      </div>
+    </div>
+    </body></html>`;
+
+  it("returns every image of the card in fullsize", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "img[src*='h998vyeprfj']");
+    expect(res.posts.map((p) => p.contentUrl)).toEqual([
+      "https://wx1.sinaimg.cn/large/c43244efgy1h998vnwsfhj21o0190e82.jpg",
+      "https://wx1.sinaimg.cn/large/c43244efgy1h998vyeprfj21o0190qv5.jpg",
+      "https://wx1.sinaimg.cn/large/c43244efgy1h998w808yjj21o0190qv5.jpg",
+    ]);
+  });
+});
+
+describe("element grab: noise inside the card is excluded", () => {
+  const html = `<html><body>
+    <div>
+      <div class="woo-box-flex">
+        <a href="//weibo.com/u/3150932560" usercard="3150932560"><img src="https://tvax3.sinaimg.cn/crop.0.0.1080.1080.1024/bbcf6a50ly8fxug0g8dcbj20u00u0wg6.jpg?KID="><span>_第七定义</span></a>
+        <a href="https://weibo.com/3150932560/RoVILhfCJ"><span>昨天 12:03</span></a>
+      </div>
+      <div>
+        <img alt="[捂嘴哭]" src="https://face.t.sinajs.cn/t4/appstyle/expression/ext/normal/b4/2025_wuzuiku_mobile.png">
+        <img src="https://wx4.sinaimg.cn/orj360/bbcf6a50gy1iijdptbdsnj20w1104qtp.jpg">
+      </div>
+    </div>
+    </body></html>`;
+
+  it("grabs only the content picture (avatar crop + emoticon excluded)", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "img[src*='orj360']");
+    expect(res.posts.map((p) => p.contentUrl)).toEqual([
+      "https://wx4.sinaimg.cn/large/bbcf6a50gy1iijdptbdsnj20w1104qtp.jpg",
+    ]);
+  });
+});
+
+describe("element grab: video card", () => {
+  const html = `<html><body>
+    <div>
+      <div class="woo-box-flex">
+        <a href="//weibo.com/u/6279793937" usercard="6279793937"><span>明日方舟Arknights</span></a>
+        <a href="https://weibo.com/6279793937/RobdEt83S"><span>10-24 14:40</span></a>
+      </div>
+      <img src="https://wx2.sinaimg.cn/orj480/006QZngZgy1iigz8s5u71j31hc0u07wi.jpg">
+      <div><video controls><source src="https://f.video.weibocdn.com/o0/CwtZ6aCKlx08BTNtXePK01041203jwGh0E020.mp4?label="></video></div>
+    </div>
+    </body></html>`;
+
+  it("prefers the real video url over the poster image", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "video");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentType).toBe("video");
+    expect(res.posts[0].contentUrl).toBe("https://f.video.weibocdn.com/o0/CwtZ6aCKlx08BTNtXePK01041203jwGh0E020.mp4?label=");
+  });
+});
+
+describe("element grab: embedded repost card is its own target", () => {
+  // Structure from captures: the outer post contains the embedded original in
+  // div.retweet with its own permalink, usercard author and media.
+  const html = `<html><body>
+    <div>
+      <div class="woo-box-flex">
+        <a href="//weibo.com/u/6559309860" usercard="6559309860"><span>臼朩丕苫</span></a>
+        <a href="https://weibo.com/6559309860/RodjRAhhJ"><span>10-24 20:00</span></a>
+      </div>
+      <div>repost comment</div>
+      <div><div><img src="https://wx3.sinaimg.cn/orj360/0079Uc8kgy1idq7p94fa9j30u00u00wd.jpg"></div></div>
+      <div class="retweet">
+        <a href="/u/6613707036" usercard="6613707036"><span>@香浓豚骨拉面</span></a>
+        <div><div><img src="https://wx4.sinaimg.cn/orj360/007dArk8gy1iidsw17kv3j30ol12ute2.jpg"></div></div>
+        <a href="https://weibo.com/6613707036/RoceoEsee"><span>10-24 17:14</span></a>
+      </div>
+    </div>
+    </body></html>`;
+
+  it("grabs the embedded original when its media is clicked", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "img[src*='iidsw17kv3j']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://wx4.sinaimg.cn/large/007dArk8gy1iidsw17kv3j30ol12ute2.jpg");
+    expect(res.posts[0]).toHaveTag("香浓豚骨拉面", "artist");
+    expect(res.posts[0]).toHaveSource("https://weibo.com/6613707036/RoceoEsee");
+  });
+
+  it("excludes the embedded original's media from the outer post's grab", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "img[src*='idq7p94fa9j']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://wx3.sinaimg.cn/large/0079Uc8kgy1idq7p94fa9j30u00u00wd.jpg");
+    expect(res.posts[0]).toHaveTag("臼朩丕苫", "artist");
+    expect(res.posts[0]).toHaveSource("https://weibo.com/6559309860/RodjRAhhJ");
+  });
+});
+
+describe("element grab: text-only card yields nothing", () => {
+  const html = `<html><body>
+    <div>
+      <div class="woo-box-flex">
+        <a href="//weibo.com/u/7728507948" usercard="7728507948"><span>轥琹</span></a>
+        <a href="https://weibo.com/7728507948/RoD8dBs6L"><span>10-27 12:43</span></a>
+      </div>
+      <div>just text</div>
+    </div>
+    </body></html>`;
+
+  it("finds no content media and produces zero posts", () => {
+    const res = scrapeElementFixture("https://weibo.com/", html, "div > div");
     expect(res.posts.length).toBe(0);
   });
 });
