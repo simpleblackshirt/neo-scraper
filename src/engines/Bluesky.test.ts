@@ -474,3 +474,44 @@ describe("element grab: viewer dialog nested in the app tree", () => {
     expect(res.posts[0].tags).toEqual([]);
   });
 });
+
+describe("toolbar grab on a post page with the feed still mounted (fixture)", () => {
+  // Live probe (2026-10-30): a post permalink page carried 116 feed images -
+  // the stale timeline mounted under the thread view. The scrape must
+  // restrict itself to the focused post's thread item.
+  const pageUrl = "https://bsky.app/profile/focused.bsky.social/post/3mfocused1";
+  const html = `<html><body>
+    <div>
+      <img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:stale/bafkreistale">
+      <div>
+        <div data-testid="postThreadItem-by-focused.bsky.social">
+          <a href="/profile/focused.bsky.social"><span>Focused</span></a>
+          <div><div><img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:focused/bafkreiown"></div></div>
+        </div>
+        <div data-testid="postThreadItem-by-replier.bsky.social">
+          <a href="/profile/replier.bsky.social"><span>Replier</span></a>
+          <div><div><img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:replier/bafkreireply"></div></div>
+        </div>
+      </div>
+    </div>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("grabs only the focused post, not the mounted feed or the replies", () => {
+    expect(res.posts.map((p) => p.contentUrl)).toEqual([
+      "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:focused/bafkreiown",
+    ]);
+    expect(res.posts[0]).toHaveTag("focused", "artist");
+    expect(res.posts[0].pageUrl).toBe(pageUrl);
+  });
+
+  it("falls back to the whole document when the focused item is missing", () => {
+    const res = scrapeFixture(pageUrl, html.replace(' data-testid="postThreadItem-by-focused.bsky.social"', ""));
+    // Legacy behavior: one post per feed image (stale feed included).
+    expect(res.posts.length).toBe(3);
+  });
+});

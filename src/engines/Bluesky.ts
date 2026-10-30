@@ -340,7 +340,24 @@ export default class Bluesky extends ScrapeEngineBase {
 
   scrapeDocument(document: Document): ScrapeResult {
     const result = new ScrapeResult(this.name);
-    const imgEls = Array.from<HTMLImageElement>(document.querySelectorAll("div > img"));
+
+    // On a post's own page the SPA keeps the previously visited feed mounted
+    // in the DOM (100+ feed images observed on real pages) - restrict the
+    // scrape to the focused post's thread item, whose testid embeds the page
+    // author's handle.
+    const pagePost = document.location.pathname.match(/^\/profile\/([^/]+)\/post\/[^/]+$/);
+    let imgEls: HTMLImageElement[];
+    if (pagePost && /^[A-Za-z0-9.:_-]+$/.test(pagePost[1])) {
+      const focusedItem = document.querySelector(`[data-testid="postThreadItem-by-${pagePost[1]}"]`);
+      if (focusedItem) {
+        this.log("Post page detected - grabbing only the focused post.");
+        imgEls = Array.from(focusedItem.querySelectorAll("img"));
+      } else {
+        imgEls = Array.from<HTMLImageElement>(document.querySelectorAll("div > img"));
+      }
+    } else {
+      imgEls = Array.from<HTMLImageElement>(document.querySelectorAll("div > img"));
+    }
 
     let els = imgEls.filter((x) => x.src.indexOf("feed_fullsize") != -1);
 
