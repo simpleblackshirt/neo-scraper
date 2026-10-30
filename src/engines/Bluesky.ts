@@ -49,6 +49,8 @@ function hashtagsFromElement(el: Element): ScrapedTag[] {
 
 /**
  * Extracts the author handle from a post container and returns it as an artist tag.
+ * Bluesky artist tags drop the `.bsky.social` suffix; custom-domain handles
+ * are kept as-is.
  */
 function artistFromElement(el: Element): ScrapedTag | undefined {
   const authorLink = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[href^="/profile/"]')).find(
@@ -56,9 +58,24 @@ function artistFromElement(el: Element): ScrapedTag | undefined {
   );
   const handle = authorLink ? handleFromProfileHref(authorLink.getAttribute("href") ?? "") : undefined;
   if (handle) {
-    return new ScrapedTag(handle, "artist");
+    return artistTagFromHandle(handle);
   }
   return undefined;
+}
+
+function artistTagFromHandle(handle: string): ScrapedTag {
+  return new ScrapedTag(handle.replace(/\.bsky\.social$/, ""), "artist");
+}
+
+/**
+ * Embedded quote cards are wrapped in a clickable div carrying the quoted
+ * author's handle in its aria-label - the only landmark they render (no
+ * profile links, no permalinks, no testids).
+ */
+const QUOTE_CARD_SELECTOR = '[role="link"][aria-label^="Post by "]';
+
+function quoteCardHandle(card: Element): string | undefined {
+  return card.getAttribute("aria-label")?.match(/^Post by (.+)$/)?.[1];
 }
 
 /**
@@ -115,18 +132,29 @@ export default class Bluesky extends ScrapeEngineBase {
   name = "bluesky";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category"];
   notes = [
-    "Hashtags become tags and the author's handle becomes an artist tag.",
+    "Hashtags become tags and the author's handle becomes an artist tag (.bsky.social suffix dropped).",
     "Tags may be unavailable in the fullscreen image viewer when the post text is not rendered.",
-    "Element grabs (context menu): the fullscreen viewer yields a content-only post (the dialog renders no metadata), and quoted posts cannot be grabbed independently - quote cards render without any links or metadata, so quoted clicks grab the outer post including the quoted media.",
+    "Element grabs (context menu): the fullscreen viewer yields a content-only post (the dialog renders no metadata); embedded quote cards are their own grab target with the quoted author's profile url as source, since cards render no post id.",
   ];
   supportedHosts = ["bsky.app"];
 
   /**
-   * Container resolution for context-menu element grabs: the same walk as
-   * postScopeFromImg, generalized to any target (text, media). Falls back to
-   * the fullscreen viewer dialog, which contains no profile links.
+   * Container resolution for context-menu element grabs, in priority order:
+   * 1. the fullscreen viewer dialog (nested inside the app tree - checking it
+   *    first keeps the walk from climbing out into the feed behind it),
+   * 2. an embedded quote card (its own grab target; the walk would pass
+   *    through it because cards render no profile links),
+   * 3. the post container via the postScopeFromImg walk.
    */
   findPostContainer(target: Element): Element | null {
+    const dialog = target.closest("[role='dialog']");
+    if (dialog) {
+      return dialog;
+    }
+    const card = target.closest(QUOTE_CARD_SELECTOR);
+    if (card) {
+      return card;
+    }
     let node: Element | null = target;
     while (node) {
       node = node.parentElement;
@@ -137,14 +165,47 @@ export default class Bluesky extends ScrapeEngineBase {
         return node;
       }
     }
-    return target.closest("[role='dialog']");
+    return null;
   }
 
   scrapeElement(container: Element): ScrapeResult {
     if (container.getAttribute("role") === "dialog") {
       return this.scrapeViewerDialog(container);
     }
+    if (container.matches(QUOTE_CARD_SELECTOR)) {
+      return this.scrapeQuoteCard(container);
+    }
     return this.scrapePostContainer(container);
+  }
+
+  /**
+   * Scrapes an embedded quote card as a post of its own. The card renders no
+   * links: the quoted author's handle comes from the aria-label, so the source
+   * can only be the author's profile url, not the quoted post.
+   */
+  private scrapeQuoteCard(card: Element): ScrapeResult {
+    const result = new ScrapeResult(this.name);
+    const handle = quoteCardHandle(card);
+    const pageUrl = handle ? `https://bsky.app/profile/${handle}` : pageUrlFrom(card);
+    const artist = handle ? artistTagFromHandle(handle) : undefined;
+
+    const seen = new Set<string>();
+    for (const img of feedImgs(card)) {
+      const contentUrl = getFullSizeImg(img.src);
+      if (seen.has(contentUrl)) {
+        continue;
+      }
+      seen.add(contentUrl);
+
+      const post = new ScrapedPost();
+      post.pageUrl = pageUrl;
+      post.contentUrl = contentUrl;
+      post.sources = handle ? [pageUrl] : [];
+      post.tags = artist ? [artist] : [];
+      result.tryAddPost(post);
+    }
+
+    return result;
   }
 
   private scrapePostContainer(scope: Element): ScrapeResult {
@@ -160,6 +221,10 @@ export default class Bluesky extends ScrapeEngineBase {
 
     const seen = new Set<string>();
     for (const img of feedImgs(scope)) {
+      // Quoted media is excluded: the quote card is its own grab target.
+      if (img.closest(QUOTE_CARD_SELECTOR)) {
+        continue;
+      }
       const contentUrl = getFullSizeImg(img.src);
       if (seen.has(contentUrl)) {
         continue;
