@@ -1,5 +1,5 @@
 import { ScrapeResults } from "../ScrapeEngine.js";
-import { scrapeFixture } from "../test/fixture.js";
+import { scrapeElementFixture, scrapeFixture } from "../test/fixture.js";
 
 describe("get lofter post (fixture)", () => {
   const pageUrl = "https://someblog.lofter.com/post/1e8c2_abc123";
@@ -227,6 +227,141 @@ describe("skip lofter dashboard pages (fixture)", () => {
   });
 
   it("should find no posts on non-permalink pages", () => {
+    expect(res.posts.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Element grabs (context menu). Structures from live captures (2026-10-31,
+// logged-in lofter.com dashboard + a themed user page): see SzuruImporter
+// docs/plan/20261018-element-context-grab/dom-notes/lofter.md.
+// ---------------------------------------------------------------------------
+
+const dashboardCardHtml = `<html><body>
+  <div>
+    <div class="isaym">
+      <a href="https://jinyu537.lofter.com"><span>Jinyu</span></a>
+      <a href="https://jinyu537.lofter.com/post/1fc97862_34f8c4aa8"><span>查看全文</span></a>
+      <a href="https://www.lofter.com/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F"><span>#明日方舟</span></a>
+      <img class="js-442418">
+      <div><img src="https://imglf3.lf127.net/img/18114dadc491284e/YTlDUEFKNWRYd2xZMG9TTE56NHlJaVR5QjJ2aGtKWEpTWjU5cmw2YStxVT0."></div>
+    </div>
+  </div>
+  </body></html>`;
+
+describe("element grab: dashboard single-image card", () => {
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeElementFixture("https://www.lofter.com/", dashboardCardHtml, "img[src*='imglf']");
+  });
+
+  it("finds exactly one post", () => {
+    expect(res.posts.length).toBe(1);
+  });
+
+  it("keeps the original-quality url", () => {
+    expect(res.posts[0].contentUrl).toBe(
+      "https://imglf3.lf127.net/img/18114dadc491284e/YTlDUEFKNWRYd2xZMG9TTE56NHlJaVR5QjJ2aGtKWEpTWjU5cmw2YStxVT0."
+    );
+  });
+
+  it("derives the artist from the permalink's blog subdomain", () => {
+    expect(res.posts[0]).toHaveTag("jinyu537", "artist");
+  });
+
+  it("carries the canonical permalink as source and pageUrl", () => {
+    expect(res.posts[0]).toHaveSource("https://jinyu537.lofter.com/post/1fc97862_34f8c4aa8");
+    expect(res.posts[0].pageUrl).toBe("https://jinyu537.lofter.com/post/1fc97862_34f8c4aa8");
+  });
+
+  it("carries the decoded tag", () => {
+    expect(res.posts[0]).toHaveTag("明日方舟");
+  });
+
+  it("resolves the same card when the post text is clicked", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", dashboardCardHtml, ".isaym a[href*='/tag/']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0]).toHaveTag("jinyu537", "artist");
+  });
+});
+
+describe("element grab: dashboard multi-image card with dedup", () => {
+  const html = `<html><body>
+    <div class="isaym">
+      <a href="https://sunledeg.lofter.com"><span>Sunle</span></a>
+      <a href="https://sunledeg.lofter.com/post/1f5322a1_34f91132a"><span>查看全文</span></a>
+      <a href="https://www.lofter.com/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F"><span>#明日方舟</span></a>
+      <img class="js-262533">
+      <img src="https://imglf4.lf127.net/img/1ee0340607d5120c/Vi96Yk9XS3BKZUVnMHVWaFEzaHQrNm81Qko5eGJEZUJKWVVNT25nUzA1dz0.">
+      <img src="https://imglf4.lf127.net/img/1ee0340607d5120c/Vi96Yk9XS3BKZUVnMHVWaFEzaHQrNm81Qko5eGJEZUJKWVVNT25nUzA1dz0.">
+      <img src="https://imglf5.lf127.net/img/4659949ca59246c7/Vi96Yk9XS3BKZUVnMHVWaFEzaHQreE54MzkyTzQ1YThHeEFLb0tkczJXMD0.">
+    </div>
+    </body></html>`;
+
+  it("deduplicates the double-rendered image", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, "img[src*='4659949c']");
+    expect(res.posts.map((p) => p.contentUrl)).toEqual([
+      "https://imglf4.lf127.net/img/1ee0340607d5120c/Vi96Yk9XS3BKZUVnMHVWaFEzaHQrNm81Qko5eGJEZUJKWVVNT25nUzA1dz0.",
+      "https://imglf5.lf127.net/img/4659949ca59246c7/Vi96Yk9XS3BKZUVnMHVWaFEzaHQreE54MzkyTzQ1YThHeEFLb0tkczJXMD0.",
+    ]);
+    expect(res.posts.every((p) => p.contentUrl.length > 0)).toBe(true);
+    expect(res.posts[0]).toHaveTag("sunledeg", "artist");
+  });
+});
+
+describe("element grab: themed permalink page with bigimgsrc", () => {
+  const pageUrl = "https://wusenangua.lofter.com/post/1d3bb0bb_2be893c63";
+  const original = "https://imglf3.lf127.net/img/04cd26a9a07e8625/bC9RU05VOUQvNWdMd2gxNVArNHA1Q0dHYlZSRXo3a1RLbDRKdk1UUT";
+  const html = `<html><body>
+    <div class="post photo">
+      <a href="https://wusenangua.lofter.com/post/1d3bb0bb_2be893c63" bigimgsrc="${original}">
+        <img src="${original}?thumbnail=1">
+      </a>
+      <a href="https://wusenangua.lofter.com/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F"><span>#明日方舟</span></a>
+    </div>
+    </body></html>`;
+
+  it("resolves the bigimgsrc original and the artist from the permalink subdomain", () => {
+    // No blog-root author link exists on this themed page - the permalink's
+    // subdomain is the only author signal.
+    const res = scrapeElementFixture(pageUrl, html, "img");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe(original);
+    expect(res.posts[0]).toHaveTag("wusenangua", "artist");
+    expect(res.posts[0]).toHaveSource(pageUrl);
+    expect(res.posts[0].pageUrl).toBe(pageUrl);
+  });
+});
+
+describe("element grab: video card in expanded state", () => {
+  const html = `<html><body>
+    <div class="isaym">
+      <a href="https://luopomengjingbiao.lofter.com/post/31d4fee2_34f55cfdb"><span>查看全文</span></a>
+      <img src="https://imglf4.lf127.net/img/8f87634939d49479/SmJhdjlTMXRSYmRsMTF6aUd1Q2luSkNIM3NnTkRpWXUxbGoyOW5lMC9PZz0.">
+      <div><video controls><source src="https://vodm2lzexwq.vod.126.net/vodm2lzexwq/zqanefJj_11634000210_sd.mp4?resId=x"></video></div>
+    </div>
+    </body></html>`;
+
+  it("prefers the real video url over the cover image", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, "video");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentType).toBe("video");
+    expect(res.posts[0].contentUrl).toBe("https://vodm2lzexwq.vod.126.net/vodm2lzexwq/zqanefJj_11634000210_sd.mp4?resId=x");
+    expect(res.posts[0]).toHaveTag("luopomengjingbiao", "artist");
+  });
+});
+
+describe("element grab: text-only card yields nothing", () => {
+  const html = `<html><body>
+    <div class="isaym">
+      <a href="https://xinjinjumin809976102299.lofter.com"><span>Author</span></a>
+      <div>just text</div>
+    </div>
+    </body></html>`;
+
+  it("finds no content media and produces zero posts", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, ".isaym > div");
     expect(res.posts.length).toBe(0);
   });
 });
