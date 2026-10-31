@@ -366,15 +366,14 @@ describe("element grab: text-only card yields nothing", () => {
   });
 });
 
-describe("element grab: image viewer overlay (album prefix match)", () => {
-  // Live probe (2026-10-30): the viewer overlay and the underlying feed card
-  // use DIFFERENT renditions - the encrypted imglf file names differ in their
-  // tails but share a long album prefix (28+ chars). Different posts share
-  // none. The matcher must work on the prefix, never exact names.
-  const viewerImg =
-    "https://imglf3.lf127.net/img/eb7db4dcecbd65d1/bHZSZTMwV3JWeDc2RjNkZmRFQWdyeDQxYTF3Vk55bDdrWElSTXJDQnoyND0.jpg?imageView&thumbnail=2000y2221&type=jpg&quality=96&stripmeta=0";
+describe("element grab: image viewer overlay (exact gallery match)", () => {
+  // Live structure (tag-page dump): multi-picture posts carry a hidden
+  // gallery list whose images reference their large rendition via a `large`
+  // attribute - the photoshow viewer displays exactly that rendition.
+  const viewerLarge =
+    "https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUEZGRT0.jpg?imageView&thumbnail=1680x0&quality=96&stripmeta=0&type=jpg";
   const feedThumb =
-    "https://imglf4.lf127.net/img/1f87225a922d1fb6/bHZSZTMwV3JWeDc2RjNkZmRFQWdyK1JrVlNwL3VBWnR5RjZySjFPVHoyYz0.jpg?imageView&thumbnail=500x0&quality=96&stripmeta=0";
+    "https://imglf4.lf127.net/img/1f87225a922d1fb6/QXRheSs4ZXBkczRWRFFXL0d5Vnlvd3BLdnFLNGpPbDc2d3Avekg0QnlrOD0.jpg?imageView&thumbnail=500x0&quality=96&stripmeta=0&type=jpg";
   const decoyThumb =
     "https://imglf5.lf127.net/img/decoydir/QXRheSs4ZXBkczRWRFFXL0d5Vnlvd3BLdnFLNGpPbDc2d3Avekg0QnlrOD0.jpg";
   const html = `<html><body>
@@ -383,37 +382,47 @@ describe("element grab: image viewer overlay (album prefix match)", () => {
         <a href="https://someauthor.lofter.com"><span>Some Author</span></a>
         <a href="https://someauthor.lofter.com/post/1fabcd12_34efabcd"><span>查看全文</span></a>
         <a href="https://www.lofter.com/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F"><span>#明日方舟</span></a>
-        <div><img src="${feedThumb}"></div>
+        <div class="img">
+          <div class="imgc">
+            <a href="#"><img src="${feedThumb}"></a>
+            <ol style="display:none;">
+              <li>
+                <div class="imgc">
+                  <a href="#"><img large="${viewerLarge}" src="${feedThumb}"></a>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </div>
       </div>
       <div class="isaym">
-        <a href="https://decoy.lofter.com"><span>Decoy Author</span></a>
-        <a href="https://decoy.lofter.com/post/1fdecoy12_34deefabcd"><span>查看全文</span></a>
+        <a href="https://decoyauthor.lofter.com"><span>Decoy Author</span></a>
+        <a href="https://decoyauthor.lofter.com/post/1fdecoy12_34deefabcd"><span>查看全文</span></a>
         <div><img src="${decoyThumb}"></div>
       </div>
       <div class="photos wtag">
-        <img src="${viewerImg}">
+        <img src="${viewerLarge}">
       </div>
     </div>
     </body></html>`;
 
-  it("resolves the underlying card by shared album prefix", () => {
+  it("resolves the underlying card by exact large-rendition identity", () => {
     const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
     expect(res.posts.length).toBe(1);
-    // Original quality: the processing query is stripped.
     expect(res.posts[0].contentUrl).toBe(feedThumb.split("?")[0]);
     expect(res.posts[0]).toHaveTag("someauthor", "artist");
     expect(res.posts[0]).toHaveSource("https://someauthor.lofter.com/post/1fabcd12_34efabcd");
-    expect(res.posts[0].tags.find((x) => x.name == "decoy")).toBeUndefined();
+    expect(res.posts[0].tags.find((x) => x.name == "decoyauthor")).toBeUndefined();
   });
 });
 
-describe("element grab: viewer overlay with no album match", () => {
-  // The viewed image is not rendered in any card behind the overlay (e.g. a
+describe("element grab: viewer overlay with no matching feed image", () => {
+  // The viewed image is not referenced by any card behind the overlay (e.g. a
   // viewer opened over a page that no longer contains the post) - grab
   // nothing. Falling through to the walk here would return the whole feed.
   const html = `<html><body>
     <div class="photos wtag">
-      <img src="https://imglf3.lf127.net/img/eb7db4dcecbd65d1/bHZSZTMwV3JWeDc2RjNkZmRFQWdyeDQxYTF3Vk55bDdrWElSTXJDQnoyND0.jpg?imageView&thumbnail=2000y2221">
+      <img src="https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUEZGRT0.jpg?imageView&thumbnail=1680x0&quality=96&stripmeta=0&type=jpg">
     </div>
     <div>
       <div class="isaym">
@@ -426,6 +435,42 @@ describe("element grab: viewer overlay with no album match", () => {
   it("produces zero posts", () => {
     const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
     expect(res.posts.length).toBe(0);
+  });
+});
+
+describe("element grab: same-blog cards are told apart by exact file identity", () => {
+  // Live e2e round 2 finding (user report): several single-picture posts by
+  // ONE author share a long imglf prefix (the blog's image directory), so any
+  // prefix-based matching always returned the first card. Exact file identity
+  // tells them apart.
+  const cardAImg =
+    "https://imglf5.lf127.net/img/15ec0c4e721ad7b6/QjRvUW1sblNldDYvTS9ZdlJsNDl6eUloblhVOUNKNTArS3cwMEFyZTNoaz0.jpg?imageView&thumbnail=1000x0&type=jpg";
+  const cardBImg =
+    "https://imglf5.lf127.net/img/32467c48db918591/QjRvUW1sblNldDYvTS9ZdlJsNDl6MjdPWHRHZnFiTmRVUjhma3J6MG90OD0.jpg?imageView&thumbnail=1000x0&type=jpg";
+  const html = `<html><body>
+    <div>
+      <div class="isaym">
+        <a href="https://atractylodec.lofter.com"><span>白术不苦</span></a>
+        <a href="https://atractylodec.lofter.com/post/30d2a938_34f7d1ba2"><span>查看全文</span></a>
+        <img src="${cardAImg}">
+      </div>
+      <div class="isaym">
+        <a href="https://atractylodec.lofter.com"><span>白术不苦</span></a>
+        <a href="https://atractylodec.lofter.com/post/30d2a938_34f7d7352"><span>查看全文</span></a>
+        <img src="${cardBImg}">
+      </div>
+      <div class="photos wtag">
+        <img src="${cardAImg}">
+      </div>
+    </div>
+    </body></html>`;
+
+  it("grabs the card owning the viewed file, not the first same-blog card", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe(cardAImg.split("?")[0]);
+    expect(res.posts[0]).toHaveSource("https://atractylodec.lofter.com/post/30d2a938_34f7d1ba2");
+    expect(res.posts[0].contentUrl).not.toBe(cardBImg.split("?")[0]);
   });
 });
 
