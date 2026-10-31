@@ -365,3 +365,75 @@ describe("element grab: text-only card yields nothing", () => {
     expect(res.posts.length).toBe(0);
   });
 });
+
+describe("element grab: image viewer overlay", () => {
+  // Live finding (e2e round 1): Lofter's viewer is a fixed div.photos overlay
+  // nested inside the app tree - the permalink walk used to climb out of it
+  // into the feed behind and returned the whole timeline (tags included).
+  const viewerImg = "https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUE";
+  const feedThumb = "https://imglf4.lf127.net/img/1f87225a922d1fb6/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUE";
+  const html = `<html><body>
+    <div>
+      <div class="isaym">
+        <a href="https://someauthor.lofter.com"><span>Some Author</span></a>
+        <a href="https://someauthor.lofter.com/post/1fabcd12_34efabcd"><span>查看全文</span></a>
+        <a href="https://www.lofter.com/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F"><span>#明日方舟</span></a>
+        <div><img src="${feedThumb}"></div>
+      </div>
+      <div class="photos wtag">
+        <img src="${viewerImg}">
+      </div>
+    </div>
+    </body></html>`;
+
+  it("resolves the underlying card by imglf path segment", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe(feedThumb);
+    expect(res.posts[0]).toHaveTag("someauthor", "artist");
+    expect(res.posts[0]).toHaveSource("https://someauthor.lofter.com/post/1fabcd12_34efabcd");
+  });
+});
+
+describe("element grab: viewer overlay with no matching feed image", () => {
+  // The viewed image is not rendered in any card behind the overlay (e.g. a
+  // viewer opened over a page that no longer contains the post) - grab
+  // nothing. Falling through to the walk here would return the whole feed.
+  const html = `<html><body>
+    <div class="photos wtag">
+      <img src="https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUE">
+    </div>
+    <div>
+      <div class="isaym">
+        <a href="https://someauthor.lofter.com/post/1fabcd12_34efabcd"><span>查看全文</span></a>
+        <div><img src="https://imglf5.lf127.net/img/different/unrelated"></div>
+      </div>
+    </div>
+    </body></html>`;
+
+  it("produces zero posts", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
+    expect(res.posts.length).toBe(0);
+  });
+});
+
+describe("element grab: hot-section permalink fragment is stripped", () => {
+  const html = `<html><body>
+    <div class="post photo">
+      <a href="https://wusenangua.lofter.com/post/1d3bb0bb_2be893c63#hot" bigimgsrc="https://imglf3.lf127.net/img/04cd26a9a07e8625/bC9RU05VOUQvNWdMd2gxNVArNHA1Q0dHYlZSRXo3a1RLbDRKdk1UUT">
+        <img src="https://imglf3.lf127.net/img/04cd26a9a07e8625/bC9RU05VOUQvNWdMd2gxNVArNHA1Q0dHYlZSRXo3a1RLbDRKdk1UUT?thumbnail=1">
+      </a>
+    </div>
+    </body></html>`;
+
+  it("does not append #hot to the source", () => {
+    const res = scrapeElementFixture(
+      "https://wusenangua.lofter.com/post/1d3bb0bb_2be893c63",
+      html,
+      "img"
+    );
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0]).toHaveSource("https://wusenangua.lofter.com/post/1d3bb0bb_2be893c63");
+    expect(res.posts[0].pageUrl).toBe("https://wusenangua.lofter.com/post/1d3bb0bb_2be893c63");
+  });
+});

@@ -177,12 +177,35 @@ export default class Lofter extends ScrapeEngineBase {
   }
 
   /**
-   * Container resolution for context-menu element grabs: the innermost
-   * ancestor containing a post permalink. On the dashboard this is the post's
-   * content block (which holds the author link, tags, permalink and media);
-   * on themed blog pages it is the theme's post container.
+   * Container resolution for context-menu element grabs, in priority order:
+   * 1. the image viewer overlay (div.photos): it is nested inside the app
+   *    tree and renders no metadata - match the viewed image to the underlying
+   *    feed card by imglf path segment and grab that card. A failed match
+   *    yields nothing (never the whole feed behind the overlay),
+   * 2. the innermost ancestor containing a post permalink (the dashboard's
+   *    content block, or the theme's post container).
    */
   findPostContainer(target: Element): Element | null {
+    // Lofter's image viewer: a fixed div.photos overlay holding the focused
+    // image (plus "查看原图" links) without any post metadata.
+    const overlay = target.closest("div.photos");
+    if (overlay) {
+      const viewerImg = target.tagName === "IMG" ? (target as HTMLImageElement) : overlay.querySelector("img");
+      const segment = viewerImg?.src.split("/").pop();
+      if (segment && target.ownerDocument) {
+        const match = Array.from(target.ownerDocument.querySelectorAll("img")).find(
+          (img) => !overlay.contains(img) && img.src.split("/").pop() === segment
+        );
+        if (match) {
+          // The matched feed image lives in the real post card - resolve it.
+          return this.findPostContainer(match);
+        }
+      }
+      // Nothing behind the overlay matches the viewed image - grab nothing
+      // (falling through to the walk here would grab the whole timeline).
+      return null;
+    }
+
     let node: Element | null = target;
     while (node) {
       node = node.parentElement;
@@ -219,7 +242,11 @@ export default class Lofter extends ScrapeEngineBase {
       : Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[href]")).find((a) =>
           postPermalinkRe.test(a.getAttribute("href") || "")
         );
-    const source = permalinkEl ? absoluteUrl(permalinkEl.getAttribute("href") || "", baseUrl) : undefined;
+    // Hot-section permalinks carry a #hot fragment - the canonical url is the
+    // href without it.
+    const source = permalinkEl
+      ? absoluteUrl(permalinkEl.getAttribute("href") || "", baseUrl).split("#")[0]
+      : undefined;
     const pageUrl = source ?? baseUrl;
     const artistSubdomain = permalinkEl ? artistFromPermalink(source!) : undefined;
     const artist = artistSubdomain ? new ScrapedTag(artistSubdomain, "artist") : artistFromBlogLink(scope, baseUrl);
