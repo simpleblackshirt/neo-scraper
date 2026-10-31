@@ -366,12 +366,17 @@ describe("element grab: text-only card yields nothing", () => {
   });
 });
 
-describe("element grab: image viewer overlay", () => {
-  // Live finding (e2e round 1): Lofter's viewer is a fixed div.photos overlay
-  // nested inside the app tree - the permalink walk used to climb out of it
-  // into the feed behind and returned the whole timeline (tags included).
-  const viewerImg = "https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUE";
-  const feedThumb = "https://imglf4.lf127.net/img/1f87225a922d1fb6/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUE";
+describe("element grab: image viewer overlay (album prefix match)", () => {
+  // Live probe (2026-10-30): the viewer overlay and the underlying feed card
+  // use DIFFERENT renditions - the encrypted imglf file names differ in their
+  // tails but share a long album prefix (28+ chars). Different posts share
+  // none. The matcher must work on the prefix, never exact names.
+  const viewerImg =
+    "https://imglf3.lf127.net/img/eb7db4dcecbd65d1/bHZSZTMwV3JWeDc2RjNkZmRFQWdyeDQxYTF3Vk55bDdrWElSTXJDQnoyND0.jpg?imageView&thumbnail=2000y2221&type=jpg&quality=96&stripmeta=0";
+  const feedThumb =
+    "https://imglf4.lf127.net/img/1f87225a922d1fb6/bHZSZTMwV3JWeDc2RjNkZmRFQWdyK1JrVlNwL3VBWnR5RjZySjFPVHoyYz0.jpg?imageView&thumbnail=500x0&quality=96&stripmeta=0";
+  const decoyThumb =
+    "https://imglf5.lf127.net/img/decoydir/QXRheSs4ZXBkczRWRFFXL0d5Vnlvd3BLdnFLNGpPbDc2d3Avekg0QnlrOD0.jpg";
   const html = `<html><body>
     <div>
       <div class="isaym">
@@ -380,33 +385,40 @@ describe("element grab: image viewer overlay", () => {
         <a href="https://www.lofter.com/tag/%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F"><span>#明日方舟</span></a>
         <div><img src="${feedThumb}"></div>
       </div>
+      <div class="isaym">
+        <a href="https://decoy.lofter.com"><span>Decoy Author</span></a>
+        <a href="https://decoy.lofter.com/post/1fdecoy12_34deefabcd"><span>查看全文</span></a>
+        <div><img src="${decoyThumb}"></div>
+      </div>
       <div class="photos wtag">
         <img src="${viewerImg}">
       </div>
     </div>
     </body></html>`;
 
-  it("resolves the underlying card by imglf path segment", () => {
+  it("resolves the underlying card by shared album prefix", () => {
     const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
     expect(res.posts.length).toBe(1);
-    expect(res.posts[0].contentUrl).toBe(feedThumb);
+    // Original quality: the processing query is stripped.
+    expect(res.posts[0].contentUrl).toBe(feedThumb.split("?")[0]);
     expect(res.posts[0]).toHaveTag("someauthor", "artist");
     expect(res.posts[0]).toHaveSource("https://someauthor.lofter.com/post/1fabcd12_34efabcd");
+    expect(res.posts[0].tags.find((x) => x.name == "decoy")).toBeUndefined();
   });
 });
 
-describe("element grab: viewer overlay with no matching feed image", () => {
+describe("element grab: viewer overlay with no album match", () => {
   // The viewed image is not rendered in any card behind the overlay (e.g. a
   // viewer opened over a page that no longer contains the post) - grab
   // nothing. Falling through to the walk here would return the whole feed.
   const html = `<html><body>
     <div class="photos wtag">
-      <img src="https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUE">
+      <img src="https://imglf3.lf127.net/img/eb7db4dcecbd65d1/bHZSZTMwV3JWeDc2RjNkZmRFQWdyeDQxYTF3Vk55bDdrWElSTXJDQnoyND0.jpg?imageView&thumbnail=2000y2221">
     </div>
     <div>
       <div class="isaym">
         <a href="https://someauthor.lofter.com/post/1fabcd12_34efabcd"><span>查看全文</span></a>
-        <div><img src="https://imglf5.lf127.net/img/different/unrelated"></div>
+        <div><img src="https://imglf5.lf127.net/img/different/QXRheSs4ZXBkczRWRFFXL0d5Vnlvd3BLdnFLNGpPbDc2d3Avekg0QnlrOD0"></div>
       </div>
     </div>
     </body></html>`;

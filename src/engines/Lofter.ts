@@ -159,6 +159,20 @@ function pageUrlFrom(container: Element): string {
   return container.ownerDocument?.location?.href ?? "";
 }
 
+function commonPrefixLength(a: string, b: string): number {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) {
+    i++;
+  }
+  return i;
+}
+
+// Same-album imglf file names share 28+ leading characters (the encrypted
+// album directory); different albums shared none in the captures. The
+// threshold comfortably separates the two.
+const albumPrefixThreshold = 16;
+
 export default class Lofter extends ScrapeEngineBase {
   name = "lofter";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
@@ -180,8 +194,10 @@ export default class Lofter extends ScrapeEngineBase {
    * Container resolution for context-menu element grabs, in priority order:
    * 1. the image viewer overlay (div.photos): it is nested inside the app
    *    tree and renders no metadata - match the viewed image to the underlying
-   *    feed card by imglf path segment and grab that card. A failed match
-   *    yields nothing (never the whole feed behind the overlay),
+   *    feed cards by their shared album prefix (the encrypted imglf file names
+   *    of one post's images start with the same long prefix; renditions and
+   *    other posts do not) and grab the card with the most matches. A failed
+   *    match yields nothing (never the whole feed behind the overlay),
    * 2. the innermost ancestor containing a post permalink (the dashboard's
    *    content block, or the theme's post container).
    */
@@ -191,15 +207,36 @@ export default class Lofter extends ScrapeEngineBase {
     const overlay = target.closest("div.photos");
     if (overlay) {
       const viewerImg = target.tagName === "IMG" ? (target as HTMLImageElement) : overlay.querySelector("img");
-      const segment = viewerImg?.src.split("/").pop();
-      if (segment && target.ownerDocument) {
-        const match = Array.from(target.ownerDocument.querySelectorAll("img")).find(
-          (img) => !overlay.contains(img) && img.src.split("/").pop() === segment
-        );
-        if (match) {
-          // The matched feed image lives in the real post card - resolve it.
-          return this.findPostContainer(match);
+      const viewerSegment = viewerImg?.src.split("?")[0].split("/").pop();
+      if (viewerSegment && target.ownerDocument) {
+        // Same post => same album directory => the encrypted file names share
+        // a long prefix (28+ chars observed; renditions and other posts do
+        // not). Scope the matched images to their cards and grab the card
+        // with the most matches.
+        const counts = new Map<Element, number>();
+        for (const img of Array.from(target.ownerDocument.querySelectorAll("img"))) {
+          if (img.closest("div.photos")) {
+            continue;
+          }
+          const segment = img.src.split("?")[0].split("/").pop();
+          if (!segment || commonPrefixLength(viewerSegment, segment) < albumPrefixThreshold) {
+            continue;
+          }
+          const scope = this.findPostContainer(img);
+          if (!scope) {
+            continue;
+          }
+          counts.set(scope, (counts.get(scope) ?? 0) + 1);
         }
+        let best: Element | null = null;
+        let bestCount = 0;
+        for (const [scope, count] of counts) {
+          if (count > bestCount) {
+            best = scope;
+            bestCount = count;
+          }
+        }
+        return best;
       }
       // Nothing behind the overlay matches the viewed image - grab nothing
       // (falling through to the walk here would grab the whole timeline).
