@@ -60,6 +60,31 @@ export default class NeoScraper {
   }
 
   /**
+   * Resolves the post container for a context-menu/click target without
+   * scraping: routes to the first engine claiming the target's document
+   * location that supports element-scoped scraping. Returns null when no
+   * engine applies or the target sits outside any post container.
+   */
+  findPostContainer(target: Element): Element | null {
+    const doc = target.ownerDocument;
+    if (!doc) {
+      return null;
+    }
+
+    for (const engine of this.engines) {
+      if (!engine.canImport(doc.location)) {
+        continue;
+      }
+      if (!engine.findPostContainer) {
+        continue;
+      }
+      return engine.findPostContainer(target);
+    }
+
+    return null;
+  }
+
+  /**
    * Scrapes the post container surrounding a context-menu target element.
    * Routes to the first engine claiming the target's document location that
    * supports element-scoped scraping. Returns empty results when no engine

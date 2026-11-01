@@ -134,4 +134,30 @@ describe("NeoScraper.scrapeElement", () => {
 
     expect(res.results).toHaveLength(0);
   });
+
+  describe("findPostContainer", () => {
+    it("routes to the claiming engine and returns the resolved container", () => {
+      const engine = new StubElementEngine();
+      const scraper = scraperWith(engine);
+      const doc = domWith(fixtureHtml);
+
+      const container = scraper.findPostContainer(doc.querySelectorAll(".post img")[1]);
+
+      expect(container).toBe(doc.querySelectorAll(".post")[1]);
+    });
+
+    it("returns null when no engine claims the document", () => {
+      const scraper = scraperWith(new StubElementEngine());
+      const doc = domWith(fixtureHtml, "https://unknown.example.org/feed");
+
+      expect(scraper.findPostContainer(doc.querySelector(".post img")!)).toBeNull();
+    });
+
+    it("returns null for targets outside any post container", () => {
+      const scraper = scraperWith(new StubElementEngine());
+      const doc = domWith(fixtureHtml);
+
+      expect(scraper.findPostContainer(doc.querySelector(".banner")!)).toBeNull();
+    });
+  });
 });
