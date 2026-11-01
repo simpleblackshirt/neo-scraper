@@ -86,6 +86,20 @@ export interface ScrapeEngine {
 
   canImport(url: Location): boolean;
   scrapeDocument(document: Document): ScrapeResult;
+
+  /**
+   * Returns the post container element surrounding a context-menu target
+   * element, or null when the target is not inside a scrapable post.
+   * Optional: engines without it cannot be used for element-scoped grabs.
+   */
+  findPostContainer?(target: Element): Element | null;
+
+  /**
+   * Scrapes a single post container found by findPostContainer. The
+   * implementation must only look inside the given element.
+   * Optional: engines without it cannot be used for element-scoped grabs.
+   */
+  scrapeElement?(container: Element): ScrapeResult;
 }
 
 export abstract class ScrapeEngineBase implements ScrapeEngine {

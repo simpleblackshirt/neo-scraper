@@ -55,6 +55,17 @@ export function upgradeToOriginalQuality(imgUrl: string) {
 const lazySrcAttributes = ["data-src", "data-lazy-src", "data-original", "data-origin-src"];
 
 /**
+ * Resolves a possibly relative/protocol-relative URL against the page URL.
+ */
+function absoluteUrl(url: string, baseUrl: string): string {
+  try {
+    return new URL(url, baseUrl).href;
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Returns the best URL for the original image. Gallery anchors carry a
  * bigimgsrc attribute pointing at the full-size render, which the img src
  * doesn't use on all blog themes (they may serve a cropped thumbnail path).
@@ -80,14 +91,83 @@ function getOriginalImgUrl(img: HTMLImageElement) {
   return img.src;
 }
 
+// Post permalinks: <user>.lofter.com/post/<id> (the dashboard's "查看全文"
+// link and themed blog pages alike).
+const postPermalinkRe = /lofter\.com\/post\//;
+
+function hasPostPermalinkLink(el: Element): boolean {
+  if (el.matches("a[href]") && postPermalinkRe.test(el.getAttribute("href") || "")) {
+    return true;
+  }
+  return Array.from(el.querySelectorAll("a[href]")).some((a) => postPermalinkRe.test(a.getAttribute("href") || ""));
+}
+
+/**
+ * The artist subdomain from a post permalink
+ * (`https://<user>.lofter.com/post/<id>` -> `<user>`).
+ */
+function artistFromPermalink(permalink: string): string | undefined {
+  try {
+    const host = new URL(permalink).hostname;
+    if (host != "www.lofter.com" && host.endsWith("lofter.com")) {
+      return host.split(".")[0];
+    }
+  } catch {
+    // relative or malformed - no artist
+  }
+  return undefined;
+}
+
+/**
+ * The artist subdomain from a scope without a permalink link: the blog-root
+ * author link (`https://<user>.lofter.com`), skipping tag/edit links.
+ */
+function artistFromBlogLink(scope: Element, baseUrl: string): ScrapedTag | undefined {
+  for (const a of Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    const href = a.getAttribute("href") ?? "";
+    if (href.indexOf("lofter.com") == -1 || href.indexOf("/post/") != -1 || href.indexOf("/tag/") != -1) {
+      continue;
+    }
+    try {
+      const host = new URL(absoluteUrl(href, baseUrl)).hostname;
+      if (host != "www.lofter.com" && host.endsWith("lofter.com")) {
+        return new ScrapedTag(host.split(".")[0], "artist");
+      }
+    } catch {
+      // unparseable href - try the next link
+    }
+  }
+  return undefined;
+}
+
+function tagsFromScope(scope: Element): ScrapedTag[] {
+  const tags: ScrapedTag[] = [];
+  for (const a of Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[href*='/tag/']"))) {
+    const nameSegment = a.pathname.split("/").pop() ?? "";
+    const name = (nameSegment ? decodeURIComponent(nameSegment) : (a.textContent ?? ""))
+      .replace(/^#/g, "")
+      .replace(/#$/g, "")
+      .trim();
+    if (name && !tags.some((x) => x.name == name)) {
+      tags.push(new ScrapedTag(name));
+    }
+  }
+  return tags;
+}
+
+function pageUrlFrom(container: Element): string {
+  return container.ownerDocument?.location?.href ?? "";
+}
+
 export default class Lofter extends ScrapeEngineBase {
   name = "lofter";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
-    "Only scrapes post permalinks (…lofter.com/post/…), not the dashboard or blog feeds.",
-    "The artist tag is derived from the blog's subdomain.",
+    "Document scrape only acts on post permalinks (…lofter.com/post/…); element grabs (context menu) work on any card - the user aimed at a specific post.",
+    "The artist tag is derived from the post's blog subdomain (the permalink hostname, or the card's author link on the dashboard).",
     "Multi-image posts are scraped as multiple posts.",
     "User avatars (blog owner icon, like/comment lists) are excluded.",
+    "Element grabs on the image viewer overlay are content-only: the overlay renders the enlarged rendition without any author, permalink or tag information. The extension's click tracker resolves the underlying card whenever the viewer was opened by a normal click.",
   ];
   supportedHosts = ["lofter.com"];
 
@@ -96,6 +176,187 @@ export default class Lofter extends ScrapeEngineBase {
   canImport(url: Location): boolean {
     return url.host.replace("www.", "").endsWith("lofter.com");
   }
+
+  /**
+   * Container resolution for context-menu element grabs, in priority order:
+   * 1. the image viewer overlay (div.photos): it is nested inside the app
+   *    tree and renders no metadata - the viewed image is matched to the post
+   *    card that references the exact same file: as the img src (single-
+   *    picture posts) or as the `large` attribute of its hidden gallery list
+   *    (multi-picture posts use per-rendition file names, so exact file
+   *    identity is the only reliable link - a same-blog prefix match would
+   *    match every card of that blog). A failed match yields nothing (never
+   *    the whole feed behind the overlay),
+   * 2. the innermost ancestor containing a post permalink (the dashboard's
+   *    content block, or the theme's post container).
+   */
+  findPostContainer(target: Element): Element | null {
+    // Lofter's image viewer: a fixed div.photos overlay holding the focused
+    // image (plus "查看原图" links) without any post metadata.
+    const overlay = target.closest("div.photos");
+    if (overlay) {
+      const viewerImg = target.tagName === "IMG" ? (target as HTMLImageElement) : overlay.querySelector("img");
+      const viewerPath = viewerImg?.src.split("?")[0];
+      if (viewerPath && target.ownerDocument) {
+        const match = Array.from(target.ownerDocument.querySelectorAll("img")).find((img) => {
+          if (overlay.contains(img)) {
+            return false;
+          }
+          // The photoshow viewer displays the large rendition; the card
+          // references that exact file via its `large` attribute.
+          if ((img.getAttribute("large") || "").split("?")[0] === viewerPath) {
+            return true;
+          }
+          // Single-picture posts have no gallery list - the viewer reuses
+          // the image's own src.
+          return img.src.split("?")[0] === viewerPath;
+        });
+        if (match) {
+          // The matched image lives in the real post card - resolve it.
+          const card = this.findPostContainer(match);
+          if (card) {
+            return card;
+          }
+        }
+      }
+      // No exact match (or the matched image sits outside any card): fall
+      // back to a content-only grab of the overlay image(s) - never the feed
+      // behind the overlay.
+      return overlay;
+    }
+
+    let node: Element | null = target;
+    while (node) {
+      node = node.parentElement;
+      if (!node) {
+        break;
+      }
+      if (hasPostPermalinkLink(node)) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  scrapeElement(container: Element): ScrapeResult {
+    // Lofter's image viewer overlay: content-only (the overlay renders no
+    // author, permalink or tag information - see scrapeViewerOverlay).
+    if (container.matches("div.photos")) {
+      return this.scrapeViewerOverlay(container);
+    }
+    return this.scrapeCard(container);
+  }
+
+  /**
+   * Scrapes the image viewer overlay: one post per displayed image, content
+   * only. The overlay renders no author, permalink or tag information (see
+   * notes) - full metadata grabs come from the underlying card, which the
+   * click tracker resolves whenever the viewer was opened by a normal click.
+   */
+  private scrapeViewerOverlay(overlay: Element): ScrapeResult {
+    const result = new ScrapeResult(this.name);
+    const pageUrl = pageUrlFrom(overlay);
+
+    const seen = new Set<string>();
+    for (const img of Array.from(overlay.querySelectorAll("img"))) {
+      const url = getOriginalImgUrl(img);
+      if (!isLofterCdnUrl(url)) {
+        continue;
+      }
+      const contentUrl = upgradeToOriginalQuality(absoluteUrl(url, pageUrl));
+      if (seen.has(contentUrl)) {
+        continue;
+      }
+      seen.add(contentUrl);
+
+      const post = new ScrapedPost();
+      post.pageUrl = pageUrl;
+      post.contentUrl = contentUrl;
+      post.contentType = guessContentType(contentUrl);
+      result.tryAddPost(post);
+    }
+
+    return result;
+  }
+
+  /**
+   * Scrapes a post card resolved by findPostContainer. Works for dashboard
+   * cards and themed permalink pages alike: artist from the permalink's blog
+   * subdomain (or the card's author link), tags from /tag/ link hrefs, media
+   * via getOriginalImgUrl (gallery anchors, lazy attributes, original
+   * quality) with the usual avatar exclusion.
+   */
+  private scrapeCard(scope: Element): ScrapeResult {
+    const result = new ScrapeResult(this.name);
+    const baseUrl = pageUrlFrom(scope);
+
+    // The scope itself can be the permalink anchor (gallery images are
+    // wrapped in one on themed blog pages) - the element-list lookup below
+    // only sees descendants, so check the scope first.
+    const permalinkEl = scope.matches("a[href]") && postPermalinkRe.test(scope.getAttribute("href") || "")
+      ? scope
+      : Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[href]")).find((a) =>
+          postPermalinkRe.test(a.getAttribute("href") || "")
+        );
+    // Hot-section permalinks carry a #hot fragment - the canonical url is the
+    // href without it.
+    const source = permalinkEl
+      ? absoluteUrl(permalinkEl.getAttribute("href") || "", baseUrl).split("#")[0]
+      : undefined;
+    const pageUrl = source ?? baseUrl;
+    const artistSubdomain = permalinkEl ? artistFromPermalink(source!) : undefined;
+    const artist = artistSubdomain ? new ScrapedTag(artistSubdomain, "artist") : artistFromBlogLink(scope, baseUrl);
+
+    const tags = tagsFromScope(scope);
+    if (artist) {
+      tags.push(artist);
+    }
+
+    const buildPost = (contentUrl: string, contentType: "image" | "video") => {
+      const post = new ScrapedPost();
+      post.pageUrl = pageUrl;
+      post.contentUrl = contentUrl;
+      post.contentType = contentType;
+      post.sources = source ? [source] : [];
+      post.tags = tags.slice();
+      return post;
+    };
+
+    // Video wins when the expanded player is rendered with a real src; blob
+    // stream pointers and absent players fall through to images (a video
+    // post's cover image).
+    const videos = Array.from(scope.querySelectorAll("video"));
+    let videoSrc: string | undefined = undefined;
+    for (const video of videos) {
+      const src = video.querySelector("source")?.src ?? video.src;
+      if (src && !src.startsWith("blob:")) {
+        videoSrc = src;
+        break;
+      }
+    }
+    if (videoSrc) {
+      result.tryAddPost(buildPost(videoSrc, "video"));
+      return result;
+    }
+
+    const seen = new Set<string>();
+    for (const img of Array.from(scope.querySelectorAll("img"))) {
+      const url = getOriginalImgUrl(img);
+      if (!isLofterCdnUrl(url) || isAvatarImage(img, url)) {
+        continue;
+      }
+      const contentUrl = upgradeToOriginalQuality(url);
+      if (seen.has(contentUrl)) {
+        continue;
+      }
+      seen.add(contentUrl);
+
+      result.tryAddPost(buildPost(contentUrl, guessContentType(contentUrl)));
+    }
+
+    return result;
+  }
+
 
   scrapeDocument(document: Document): ScrapeResult {
     const result = new ScrapeResult(this.name);
