@@ -45,11 +45,126 @@ function pickVideoUrl(video: XhsNote["video"]): string | undefined {
   return video?.media?.videoUrl ?? video?.media?.url ?? video?.media?.stream?.h264?.[0]?.masterUrl;
 }
 
+/** Returns the index just after the closing quote of the string literal starting at `start`. */
+function skipString(text: string, start: number): number {
+  const quote = text[start];
+  let i = start + 1;
+  while (i < text.length) {
+    if (text[i] == "\\") {
+      i += 2;
+      continue;
+    }
+    if (text[i] == quote) {
+      return i + 1;
+    }
+    i++;
+  }
+  return i;
+}
+
+/**
+ * Matches `Identifier ( ... )` starting at `start` (just after a `new`
+ * keyword). Returns the index just after the closing paren when a
+ * well-formed constructor call follows, otherwise undefined.
+ */
+function matchConstructorCall(text: string, start: number): number | undefined {
+  const isIdentStart = (c: string) => /[A-Za-z_$]/.test(c);
+  const isIdentPart = (c: string) => /[A-Za-z0-9_$]/.test(c);
+  let i = start;
+  while (i < text.length && /\s/.test(text[i])) {
+    i++;
+  }
+  if (i >= text.length || !isIdentStart(text[i])) {
+    return undefined;
+  }
+  let j = i + 1;
+  while (j < text.length && isIdentPart(text[j])) {
+    j++;
+  }
+  while (j < text.length && /\s/.test(text[j])) {
+    j++;
+  }
+  if (text[j] != "(") {
+    return undefined;
+  }
+  let depth = 0;
+  while (j < text.length) {
+    const c = text[j];
+    if (c == '"' || c == "'") {
+      j = skipString(text, j);
+      continue;
+    }
+    if (c == "(") {
+      depth++;
+    } else if (c == ")") {
+      depth--;
+      if (depth == 0) {
+        return j + 1;
+      }
+    }
+    j++;
+  }
+  return undefined;
+}
+
+/**
+ * Rewrites the page's JS object literal so it is valid JSON: bare
+ * `undefined` / `NaN` / `Infinity` become `null` and `new Set([])`-style
+ * constructor calls become `null`. String literals are copied verbatim, so
+ * occurrences of these words inside note text cannot corrupt the payload.
+ */
+function sanitizeJsObjectLiteral(text: string): string {
+  const isIdentStart = (c: string) => /[A-Za-z_$]/.test(c);
+  const isIdentPart = (c: string) => /[A-Za-z0-9_$]/.test(c);
+  const nullKeywords = ["undefined", "NaN", "Infinity"];
+
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c == '"' || c == "'") {
+      const end = skipString(text, i);
+      out += text.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (!isIdentStart(c)) {
+      out += c;
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    while (j < text.length && isIdentPart(text[j])) {
+      j++;
+    }
+    const word = text.slice(i, j);
+    if (nullKeywords.indexOf(word) != -1) {
+      // Signed infinities ("-Infinity") must not leave a dangling minus.
+      if (word == "Infinity" && (out.endsWith("-") || out.endsWith("+"))) {
+        out = out.slice(0, -1);
+      }
+      out += "null";
+    } else if (word == "new") {
+      const end = matchConstructorCall(text, j);
+      if (end != undefined) {
+        out += "null";
+        i = end;
+        continue;
+      }
+      out += word;
+    } else {
+      out += word;
+    }
+    i = j;
+  }
+  return out;
+}
+
 export default class Xiaohongshu extends ScrapeEngineBase {
   name = "xiaohongshu";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
-    "Scrapes note pages via the page's embedded __INITIAL_STATE__ JSON, falls back to og:image.",
+    "Scrapes note pages via the page's embedded __INITIAL_STATE__ JSON, the note viewer overlay DOM (notes opened from a listing), then og:image as a last resort.",
     "The author's nickname becomes an artist tag. Xiaohongshu changes its internals often, so this engine can break at any time.",
     "Multi-image notes are scraped as multiple posts.",
   ];
@@ -58,8 +173,8 @@ export default class Xiaohongshu extends ScrapeEngineBase {
   /**
    * Content scripts cannot access the page's JavaScript globals, so the
    * initial state is parsed from the script tag's text content instead.
-   * The payload is a JS object literal and may contain `undefined` values,
-   * which are replaced with `null` before parsing.
+   * The payload is a JS object literal containing `undefined`, `NaN` and
+   * `new Set(...)`-style values, which are sanitized to `null` first.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getInitialState(document: Document): any {
@@ -75,7 +190,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
         continue;
       }
       try {
-        return JSON.parse(text.slice(start, end + 1).replace(/:\s*undefined/g, ":null"));
+        return JSON.parse(sanitizeJsObjectLiteral(text.slice(start, end + 1)));
       } catch (ex) {
         this.log("Couldn't parse __INITIAL_STATE__. " + ex);
       }
@@ -89,7 +204,14 @@ export default class Xiaohongshu extends ScrapeEngineBase {
     if (!noteDetailMap) {
       return undefined;
     }
-    const entry = noteDetailMap[noteId] ?? Object.values(noteDetailMap)[0];
+    // Listing pages embed an empty placeholder entry under the literal key
+    // "undefined"; the fallback must skip it and use a real note entry.
+    const entry =
+      noteDetailMap[noteId] ??
+      Object.values(noteDetailMap).find((x) => {
+        const note = (x as { note?: XhsNote })?.note;
+        return note != undefined && Object.keys(note).length > 0;
+      });
     return entry?.note;
   }
 
@@ -165,6 +287,78 @@ export default class Xiaohongshu extends ScrapeEngineBase {
 
     if (result.posts.length > 0) {
       return result;
+    }
+
+    // Note viewer overlay (a note opened from a listing without a page
+    // load): the page's __INITIAL_STATE__ belongs to the listing page and
+    // never contains the viewed note, but the viewer renders every slide
+    // into the DOM as it is opened.
+    const slider = document.querySelector(".note-slider");
+    if (slider) {
+      const scope = slider.closest("#noteContainer, .note-container") ?? slider;
+
+      // Tags from the overlay's tag chips, artist from the author row.
+      // Both are scoped to the overlay so listing-page cards cannot bleed in.
+      const overlayTags: ScrapedTag[] = [];
+      for (const a of Array.from(
+        scope.querySelectorAll<HTMLAnchorElement>("a[href*='search_result'], a.tag")
+      )) {
+        const name = (a.textContent ?? "")
+          .replace(/^#+/g, "")
+          .replace(/#+$/g, "")
+          .trim();
+        if (name && !overlayTags.some((x) => x.name == name)) {
+          overlayTags.push(new ScrapedTag(name));
+        }
+      }
+      const authorName =
+        scope.querySelector(".author-container a.name")?.textContent ??
+        scope.querySelector(".author-container span.username")?.textContent ??
+        scope.querySelector(".author .name")?.textContent;
+      if (authorName?.trim()) {
+        overlayTags.push(new ScrapedTag(authorName.trim(), "artist"));
+      }
+
+      // Video notes render a player into the slider.
+      const video = slider.querySelector("video");
+      const videoSrc =
+        video?.getAttribute("src") ?? video?.querySelector("source")?.getAttribute("src");
+      if (videoSrc) {
+        const post = new ScrapedPost();
+        post.pageUrl = document.location.href;
+        post.contentUrl = videoSrc;
+        post.contentType = "video";
+        post.sources = sources;
+        post.tags = overlayTags.slice();
+        result.tryAddPost(post);
+        return result;
+      }
+
+      // One post per unique slide. The swiper loops by duplicating the last
+      // slide before the first (and vice versa), so marked duplicates are
+      // skipped and urls deduped as a markup-change safety net.
+      const seen = new Set<string>();
+      for (const img of Array.from(slider.querySelectorAll("img"))) {
+        if (img.closest(".swiper-slide-duplicate")) {
+          continue;
+        }
+        const contentUrl = img.getAttribute("src") || img.src;
+        if (!contentUrl || contentUrl.startsWith("data:") || seen.has(contentUrl)) {
+          continue;
+        }
+        seen.add(contentUrl);
+        const post = new ScrapedPost();
+        post.pageUrl = document.location.href;
+        post.contentUrl = contentUrl;
+        post.contentType = guessContentType(contentUrl);
+        post.sources = sources;
+        post.tags = overlayTags.slice();
+        result.tryAddPost(post);
+      }
+
+      if (result.posts.length > 0) {
+        return result;
+      }
     }
 
     // Fallback when the state isn't available: og:image + tag chips from the DOM.
