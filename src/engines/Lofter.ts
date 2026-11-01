@@ -164,9 +164,10 @@ export default class Lofter extends ScrapeEngineBase {
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
     "Document scrape only acts on post permalinks (…lofter.com/post/…); element grabs (context menu) work on any card - the user aimed at a specific post.",
-    "The artist tag is derived from the post's blog subdomain (the permalink hostname, or the card's author blog link on the dashboard).",
+    "The artist tag is derived from the post's blog subdomain (the permalink hostname, or the card's author link on the dashboard).",
     "Multi-image posts are scraped as multiple posts.",
     "User avatars (blog owner icon, like/comment lists) are excluded.",
+    "Element grabs on the image viewer overlay are content-only: the overlay renders the enlarged rendition without any author, permalink or tag information. The extension's click tracker resolves the underlying card whenever the viewer was opened by a normal click.",
   ];
   supportedHosts = ["lofter.com"];
 
@@ -212,12 +213,16 @@ export default class Lofter extends ScrapeEngineBase {
         });
         if (match) {
           // The matched image lives in the real post card - resolve it.
-          return this.findPostContainer(match);
+          const card = this.findPostContainer(match);
+          if (card) {
+            return card;
+          }
         }
       }
-      // Nothing behind the overlay references the viewed image - grab nothing
-      // (falling through to the walk here would grab the whole timeline).
-      return null;
+      // No exact match (or the matched image sits outside any card): fall
+      // back to a content-only grab of the overlay image(s) - never the feed
+      // behind the overlay.
+      return overlay;
     }
 
     let node: Element | null = target;
@@ -234,7 +239,44 @@ export default class Lofter extends ScrapeEngineBase {
   }
 
   scrapeElement(container: Element): ScrapeResult {
+    // Lofter's image viewer overlay: content-only (the overlay renders no
+    // author, permalink or tag information - see scrapeViewerOverlay).
+    if (container.matches("div.photos")) {
+      return this.scrapeViewerOverlay(container);
+    }
     return this.scrapeCard(container);
+  }
+
+  /**
+   * Scrapes the image viewer overlay: one post per displayed image, content
+   * only. The overlay renders no author, permalink or tag information (see
+   * notes) - full metadata grabs come from the underlying card, which the
+   * click tracker resolves whenever the viewer was opened by a normal click.
+   */
+  private scrapeViewerOverlay(overlay: Element): ScrapeResult {
+    const result = new ScrapeResult(this.name);
+    const pageUrl = pageUrlFrom(overlay);
+
+    const seen = new Set<string>();
+    for (const img of Array.from(overlay.querySelectorAll("img"))) {
+      const url = getOriginalImgUrl(img);
+      if (!isLofterCdnUrl(url)) {
+        continue;
+      }
+      const contentUrl = upgradeToOriginalQuality(absoluteUrl(url, pageUrl));
+      if (seen.has(contentUrl)) {
+        continue;
+      }
+      seen.add(contentUrl);
+
+      const post = new ScrapedPost();
+      post.pageUrl = pageUrl;
+      post.contentUrl = contentUrl;
+      post.contentType = guessContentType(contentUrl);
+      result.tryAddPost(post);
+    }
+
+    return result;
   }
 
   /**

@@ -418,8 +418,9 @@ describe("element grab: image viewer overlay (exact gallery match)", () => {
 
 describe("element grab: viewer overlay with no matching feed image", () => {
   // The viewed image is not referenced by any card behind the overlay (e.g. a
-  // viewer opened over a page that no longer contains the post) - grab
-  // nothing. Falling through to the walk here would return the whole feed.
+  // viewer opened over a page that no longer contains the post) - fall back
+  // to a content-only post (the overlay renders no metadata). Falling through
+  // to the walk here would return the whole feed.
   const html = `<html><body>
     <div class="photos wtag">
       <img src="https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUEZGRT0.jpg?imageView&thumbnail=1680x0&quality=96&stripmeta=0&type=jpg">
@@ -432,9 +433,13 @@ describe("element grab: viewer overlay with no matching feed image", () => {
     </div>
     </body></html>`;
 
-  it("produces zero posts", () => {
+  it("falls back to a content-only post of the viewed image", () => {
     const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
-    expect(res.posts.length).toBe(0);
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe(
+      "https://imglf3.lf127.net/img/eb7db4dcecbd65d1/QXRheSs4ZXBkczRWRFFXL0d5VnlveVZvSVd0c21FOWN0UitiSlNaUEZGRT0.jpg"
+    );
+    expect(res.posts[0].tags).toEqual([]);
   });
 });
 
