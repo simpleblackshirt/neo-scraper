@@ -1,14 +1,23 @@
 import { ScrapeEngineBase, ScrapeResult, ScrapedPost, ScrapedTag, ScrapeEngineFeature } from "../ScrapeEngine.js";
 
-export function getOriginalImageUrl(image: HTMLImageElement) {
-  // if the link includes a resolution, change it to orig:
-  // https://pbs.twimg.com/media/stuff?format=jpg&name=900x900
-  // -> https://pbs.twimg.com/media/stuff?format=jpg&name=orig
-  const img_url = new URL((image as HTMLImageElement).src);
-  if (img_url.searchParams.has("name") && img_url.searchParams.get("name") != "orig") {
-    img_url.searchParams.set("name", "orig");
+/**
+ * Upgrades a pbs.twimg.com media url to its original-quality rendition:
+ * https://pbs.twimg.com/media/stuff?format=jpg&name=900x900
+ * -> https://pbs.twimg.com/media/stuff?format=jpg&name=orig
+ * Urls without a name param get one appended (raw CDN links may omit it;
+ * name=orig is always served). Exported for the extension's tier-1 URL
+ * rewrite resolvers, which run in the background without a DOM.
+ */
+export function getOriginalImageUrlFromUrl(url: string) {
+  const parsed = new URL(url);
+  if (parsed.searchParams.get("name") != "orig") {
+    parsed.searchParams.set("name", "orig");
   }
-  return img_url;
+  return parsed.href;
+}
+
+export function getOriginalImageUrl(image: HTMLImageElement) {
+  return new URL(getOriginalImageUrlFromUrl(image.src));
 }
 
 /**

@@ -1,8 +1,31 @@
 import { JSDOM } from "jsdom";
 import { ScrapeResults } from "../ScrapeEngine.js";
-import Twitter from "./Twitter.js";
+import Twitter, { getOriginalImageUrlFromUrl } from "./Twitter.js";
 import { scrapeEvalUrl } from "../test/engine.js";
 import { scrapeElementFixture, scrapeFixture } from "../test/fixture.js";
+
+describe("getOriginalImageUrlFromUrl", () => {
+  it("upgrades resolution name params to orig", () => {
+    expect(getOriginalImageUrlFromUrl("https://pbs.twimg.com/media/abc?format=jpg&name=900x900")).toBe(
+      "https://pbs.twimg.com/media/abc?format=jpg&name=orig",
+    );
+  });
+
+  it("appends name=orig to raw urls without a name param", () => {
+    expect(getOriginalImageUrlFromUrl("https://pbs.twimg.com/media/abc?format=jpg")).toBe(
+      "https://pbs.twimg.com/media/abc?format=jpg&name=orig",
+    );
+    expect(getOriginalImageUrlFromUrl("https://pbs.twimg.com/media/abc.jpg")).toBe(
+      "https://pbs.twimg.com/media/abc.jpg?name=orig",
+    );
+  });
+
+  it("leaves orig urls unchanged", () => {
+    expect(getOriginalImageUrlFromUrl("https://pbs.twimg.com/media/abc?format=jpg&name=orig")).toBe(
+      "https://pbs.twimg.com/media/abc?format=jpg&name=orig",
+    );
+  });
+});
 
 describe("get twitter.com post", () => {
   const pageUrl = "https://twitter.com/Dishwasher1910/status/1171162651461746688/photo/1";
