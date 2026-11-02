@@ -5,7 +5,13 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "prepare": "pnpm build",
     "test": "cross-env JEST_PUPPETEER_CONFIG=jest-puppeteer.config.cjs NODE_OPTIONS=--experimental-vm-modules jest",
     "test:ci": "cross-env JEST_PUPPETEER_CONFIG=jest-puppeteer.config.cjs NODE_OPTIONS=--experimental-vm-modules jest --colors --silent",
     "test:debug": "cross-env JEST_PUPPETEER_CONFIG=jest-puppeteer.config.cjs NODE_OPTIONS=--experimental-vm-modules HEADLESS=false jest --testTimeout=100000000",
