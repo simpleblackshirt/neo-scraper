@@ -1,6 +1,12 @@
 # neo-scraper
 
 Scrape a booru-like post object from the DOM.
+Fork of [neobooru/neo-scraper](https://github.com/neobooru/neo-scraper).
+Improvements compared to upstream:
+- Add support for Lofter, Weibo, Xiaohongshu
+- Fix source and tags support for Twitter, Pixiv, and Bluesky
+
+The functionality of most of the supported websites not mentioned in the improvements above has not been checked so there might be things in need of fixing that aren't fixed yet.
 
 ## Supported sites
 
@@ -24,9 +30,9 @@ Scrape a booru-like post object from the DOM.
 | sankakucomplex | chan.sankakucomplex.com | content, rating, tags, tag_category, notes |  |
 | shimmie2 | rule34.paheal.net, rule34hentai.net | content, tags, source | Rating is assumed to be unsafe. |
 | shuushuu | e-shuushuu.net | content, rating, resolution, tags, tag_category | Rating is assumed to be safe. |
-| twitter | twitter.com, mobile.twitter.com, x.com | content, tags, tag_category, source | Hashtags become tags and the author's handle becomes an artist tag. X redesigns its DOM frequently, so this engine can break at any time. |
-| weibo | weibo.com, weibo.cn, weibo.com.cn | content, tags, tag_category, source | Only scrapes status permalinks (weibo.com/<uid>/<bid>, m.weibo.cn/status/…, m.weibo.cn/detail/…). The author's display name becomes an artist tag. Weibo redesigns its DOM often, so this engine can break at any time. Multi-image posts are scraped as multiple posts. |
-| xiaohongshu | xiaohongshu.com | content, tags, tag_category, source | Scrapes note pages via the page's embedded __INITIAL_STATE__ JSON, falls back to og:image. The author's nickname becomes an artist tag. Xiaohongshu changes its internals often, so this engine can break at any time. Multi-image notes are scraped as multiple posts. |
+| twitter | twitter.com, mobile.twitter.com, x.com | content, tags, tag_category, source | Hashtags become tags and the author's handle becomes an artist tag. |
+| weibo | weibo.com, weibo.cn, weibo.com.cn | content, tags, tag_category, source | Only scrapes status permalinks (weibo.com/<uid>/<bid>, m.weibo.cn/status/…, m.weibo.cn/detail/…). The author's display name becomes an artist tag. |
+| xiaohongshu | xiaohongshu.com | content, tags, tag_category, source | Scrapes note pages via the page's embedded __INITIAL_STATE__ JSON, falls back to og:image. The author's nickname becomes an artist tag. Multi-image notes are scraped as multiple posts. |
 | zerochan | zerochan.net | content, resolution, tags, tag_category | Rating is assumed to be safe. |
 | fallback |  | content | Tries to find the largest image or video on the current page. |
 
