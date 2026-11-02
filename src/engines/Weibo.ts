@@ -239,7 +239,7 @@ export default class Weibo extends ScrapeEngineBase {
       }
       const name = (link.textContent ?? "").trim().replace(/^@+/, "");
       if (name) {
-        artist = new ScrapedTag(name, "artist");
+        artist = new ScrapedTag(name, "artist", "https://weibo.com/u/" + uid);
         break;
       }
     }
@@ -374,7 +374,10 @@ export default class Weibo extends ScrapeEngineBase {
         .map((x) => (x.textContent ?? "").trim())
         .find((x) => x.length > 0);
       if (authorName) {
-        tags.push(new ScrapedTag(authorName, "artist"));
+        // The first path segment can be a numeric uid or a screen name; the
+        // /u/<uid> profile form only exists for numeric uids.
+        const profileUrl = /^\d+$/.test(uid) ? "https://weibo.com/u/" + uid : undefined;
+        tags.push(new ScrapedTag(authorName, "artist", profileUrl));
       }
     }
 

@@ -31,6 +31,7 @@ describe("get xiaohongshu image note (fixture)", () => {
   it("should have the nickname as artist tag and the tag list as tags", () => {
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
     expect(res.posts[0]).toHaveTag("sometag");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://www.xiaohongshu.com/user/profile/5a");
   });
 
   it("should have the browsed page url as source", () => {
@@ -93,6 +94,7 @@ describe("get rednote image note (fixture)", () => {
   it("should extract the artist tag and tag list on rednote.com", () => {
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
     expect(res.posts[0]).toHaveTag("sometag");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://www.xiaohongshu.com/user/profile/5a");
   });
 
   it("should keep the browsed rednote page url as source", () => {
@@ -251,6 +253,8 @@ describe("get xiaohongshu note viewer overlay (fixture)", () => {
     expect(res.posts[0]).toHaveTag("overlay_artist", "artist");
     expect(res.posts[0]).toHaveTag("sometag");
     expect(res.posts[0]).toHaveTag("othertag");
+    // The author row's profile link becomes the artist tag's profile url.
+    expect(res.posts[0]).toHaveTagProfileUrl("overlay_artist", "https://www.xiaohongshu.com/user/profile/5a");
     // The listing page's card behind the overlay must not bleed in.
     expect(res.posts[0].tags.map((x) => x.name)).not.toContain("grid_tag");
     expect(res.posts[0].tags.map((x) => x.name)).not.toContain("grid_author");
@@ -278,5 +282,7 @@ describe("get xiaohongshu note skips placeholder map entries (fixture)", () => {
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentUrl).toBe("https://sns-img-qh.xhscdn.com/abc123.jpg");
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
+    // The state entry has no userId, so no profile url can be derived.
+    expect(res.posts[0].tags.find((x) => x.name == "some_artist")?.profileUrl).toBeUndefined();
   });
 });

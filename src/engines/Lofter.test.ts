@@ -38,6 +38,7 @@ describe("get lofter post (fixture)", () => {
     expect(res.posts[0]).toHaveTag("绘画");
     expect(res.posts[0]).toHaveTag("some_fandom");
     expect(res.posts[0]).toHaveTag("someblog", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("someblog", "https://someblog.lofter.com");
   });
 
   it("should derive tag names from the tag link href, ignoring decoration glyphs", () => {
@@ -268,6 +269,7 @@ describe("element grab: dashboard single-image card", () => {
 
   it("derives the artist from the permalink's blog subdomain", () => {
     expect(res.posts[0]).toHaveTag("jinyu537", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("jinyu537", "https://jinyu537.lofter.com");
   });
 
   it("carries the canonical permalink as source and pageUrl", () => {
@@ -283,6 +285,7 @@ describe("element grab: dashboard single-image card", () => {
     const res = scrapeElementFixture("https://www.lofter.com/", dashboardCardHtml, ".isaym a[href*='/tag/']");
     expect(res.posts.length).toBe(1);
     expect(res.posts[0]).toHaveTag("jinyu537", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("jinyu537", "https://jinyu537.lofter.com");
   });
 });
 
@@ -307,6 +310,7 @@ describe("element grab: dashboard multi-image card with dedup", () => {
     ]);
     expect(res.posts.every((p) => p.contentUrl.length > 0)).toBe(true);
     expect(res.posts[0]).toHaveTag("sunledeg", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("sunledeg", "https://sunledeg.lofter.com");
   });
 });
 
@@ -329,6 +333,7 @@ describe("element grab: themed permalink page with bigimgsrc", () => {
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentUrl).toBe(original);
     expect(res.posts[0]).toHaveTag("wusenangua", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("wusenangua", "https://wusenangua.lofter.com");
     expect(res.posts[0]).toHaveSource(pageUrl);
     expect(res.posts[0].pageUrl).toBe(pageUrl);
   });
@@ -349,6 +354,7 @@ describe("element grab: video card in expanded state", () => {
     expect(res.posts[0].contentType).toBe("video");
     expect(res.posts[0].contentUrl).toBe("https://vodm2lzexwq.vod.126.net/vodm2lzexwq/zqanefJj_11634000210_sd.mp4?resId=x");
     expect(res.posts[0]).toHaveTag("luopomengjingbiao", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("luopomengjingbiao", "https://luopomengjingbiao.lofter.com");
   });
 });
 
@@ -411,6 +417,7 @@ describe("element grab: image viewer overlay (exact gallery match)", () => {
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentUrl).toBe(feedThumb.split("?")[0]);
     expect(res.posts[0]).toHaveTag("someauthor", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("someauthor", "https://someauthor.lofter.com");
     expect(res.posts[0]).toHaveSource("https://someauthor.lofter.com/post/1fabcd12_34efabcd");
     expect(res.posts[0].tags.find((x) => x.name == "decoyauthor")).toBeUndefined();
   });

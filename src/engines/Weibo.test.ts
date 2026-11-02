@@ -50,6 +50,7 @@ describe("get weibo status (fixture)", () => {
   it("should have the display name as artist tag and the topic as tag", () => {
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
     expect(res.posts[0]).toHaveTag("sometopic");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://weibo.com/u/1234567890");
   });
 
   it("should have the status url as source", () => {
@@ -101,6 +102,7 @@ describe("get weibo status with /u/<uid>/<bid> permalink (fixture)", () => {
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentUrl).toBe("https://wx1.sinaimg.cn/large/abc/def.jpg");
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://weibo.com/u/1234567890");
     expect(res.posts[0]).toHaveSource(pageUrl);
   });
 });
@@ -218,6 +220,7 @@ describe("get weibo pro-next status from consumed lazy state (fixture)", () => {
 
   it("should have the author as artist tag", () => {
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://weibo.com/u/7751610237");
   });
 });
 
@@ -320,6 +323,7 @@ describe("identify the author from pro-next author links (fixture)", () => {
 
   it("should pick the artist from the absolute profile link, not the time link", () => {
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://weibo.com/u/7751610237");
   });
 });
 

@@ -131,7 +131,7 @@ function artistFromBlogLink(scope: Element, baseUrl: string): ScrapedTag | undef
     try {
       const host = new URL(absoluteUrl(href, baseUrl)).hostname;
       if (host != "www.lofter.com" && host.endsWith("lofter.com")) {
-        return new ScrapedTag(host.split(".")[0], "artist");
+        return new ScrapedTag(host.split(".")[0], "artist", "https://" + host);
       }
     } catch {
       // unparseable href - try the next link
@@ -302,7 +302,8 @@ export default class Lofter extends ScrapeEngineBase {
       : undefined;
     const pageUrl = source ?? baseUrl;
     const artistSubdomain = permalinkEl ? artistFromPermalink(source!) : undefined;
-    const artist = artistSubdomain ? new ScrapedTag(artistSubdomain, "artist") : artistFromBlogLink(scope, baseUrl);
+    const artistBlogUrl = artistSubdomain ? "https://" + artistSubdomain + ".lofter.com" : undefined;
+    const artist = artistSubdomain ? new ScrapedTag(artistSubdomain, "artist", artistBlogUrl) : artistFromBlogLink(scope, baseUrl);
 
     const tags = tagsFromScope(scope);
     if (artist) {
@@ -383,7 +384,7 @@ export default class Lofter extends ScrapeEngineBase {
     // The blog subdomain is a stable identifier for the artist.
     const host = document.location.hostname;
     if (host != "www.lofter.com" && host.endsWith(".lofter.com")) {
-      tags.push(new ScrapedTag(host.split(".")[0], "artist"));
+      tags.push(new ScrapedTag(host.split(".")[0], "artist", "https://" + host));
     }
 
     const source = document.location.origin + document.location.pathname;

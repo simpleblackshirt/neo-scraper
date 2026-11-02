@@ -64,7 +64,8 @@ function artistFromElement(el: Element): ScrapedTag | undefined {
 }
 
 function artistTagFromHandle(handle: string): ScrapedTag {
-  return new ScrapedTag(handle.replace(/\.bsky\.social$/, ""), "artist");
+  // The profile url needs the full handle; only the tag name drops the suffix.
+  return new ScrapedTag(handle.replace(/\.bsky\.social$/, ""), "artist", "https://bsky.app/profile/" + handle);
 }
 
 /**

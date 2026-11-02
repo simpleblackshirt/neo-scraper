@@ -24,10 +24,16 @@ export class ScrapedPost {
 export class ScrapedTag {
   name: string;
   category?: TagCategory;
+  /**
+   * The artist's profile url on the source site (never the post url). Engines
+   * set it on artist tags so consumers can reference the author.
+   */
+  profileUrl?: string;
 
-  constructor(name: string, category?: TagCategory) {
+  constructor(name: string, category?: TagCategory, profileUrl?: string) {
     this.name = name.replace(/\s/g, "_").toLowerCase(); // Replace all spaces with underscores and make everything lowercase
     this.category = category;
+    this.profileUrl = profileUrl;
   }
 }
 

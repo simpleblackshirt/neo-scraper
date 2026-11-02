@@ -119,6 +119,7 @@ describe("get pixiv post 93964654 (fixture)", () => {
     expect(res.posts[0]).toHaveTag("オリジナル");
     expect(res.posts[0]).toHaveTag("女の子");
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://www.pixiv.net/users/12345");
   });
 
   it("should be unsafe (xRestrict 1)", () => {
@@ -175,6 +176,8 @@ describe("get pixiv post 93964654 (fixture, no preload data)", () => {
   it("should not use the viewer's own username as artist", () => {
     expect(res.posts[0].tags.find((x) => x.name.indexOf("viewer") != -1)).toBeUndefined();
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
+    // The DOM fallback derives the profile url from the author link's path.
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://www.pixiv.net/en/users/12345");
   });
 
   it("should skip the rating link as a tag but still mark the post unsafe", () => {
@@ -247,6 +250,7 @@ describe("get pixiv post 150504540 (fixture, live DOM shape)", () => {
   it("should use the artwork author as artist even though the header viewer link comes first", () => {
     expect(res.posts[0].tags.find((x) => x.name.indexOf("viewer") != -1)).toBeUndefined();
     expect(res.posts[0]).toHaveTag("kurenai_sake", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("kurenai_sake", "https://www.pixiv.net/en/users/552160");
   });
 });
 
@@ -289,5 +293,6 @@ describe("get pixiv post 93964654 (fixture, dual-path merge)", () => {
   it("should take the artist from body.user[<userId>].name, not the header viewer link", () => {
     expect(res.posts[0].tags.find((x) => x.name.indexOf("viewer") != -1)).toBeUndefined();
     expect(res.posts[0]).toHaveTag("some_artist", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("some_artist", "https://www.pixiv.net/users/12345");
   });
 });

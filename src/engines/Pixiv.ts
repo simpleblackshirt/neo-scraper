@@ -82,7 +82,11 @@ export default class Pixiv extends ScrapeEngineBase {
           const userMap: { [key: string]: { name?: string } } = data?.body?.user ?? {};
           const name = (illust.userId ? userMap[illust.userId]?.name : undefined) ?? illust.userName;
           if (name) {
-            artist = new ScrapedTag(name, "artist");
+            artist = new ScrapedTag(
+              name,
+              "artist",
+              illust.userId ? "https://www.pixiv.net/users/" + illust.userId : undefined
+            );
           }
           const tagList = Array.isArray(illust.tags) ? illust.tags : (illust.tags?.tags ?? []);
           tags = Pixiv.uniqueTags(tagList.map((t) => t?.tag ?? ""));
@@ -141,7 +145,7 @@ export default class Pixiv extends ScrapeEngineBase {
         );
       const name = authorLink ? textOf(authorLink) : "";
       if (name) {
-        artist = new ScrapedTag(name, "artist");
+        artist = new ScrapedTag(name, "artist", "https://www.pixiv.net" + authorLink!.pathname);
       }
     }
 

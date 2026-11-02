@@ -34,6 +34,16 @@ expect.extend({
     }
     return { pass, message };
   },
+  toHaveTagProfileUrl(received: any, tagName: string, profileUrl: string): jest.CustomMatcherResult {
+    let pass = false;
+    const message = () => (pass ? "" : `Post does not have the '${tagName}' tag with profile url '${profileUrl}'.`);
+
+    if (received instanceof ScrapedPost) {
+      const found = received.tags.find((x) => x.name == tagName);
+      pass = found?.profileUrl == profileUrl;
+    }
+    return { pass, message };
+  },
   toHaveNote(received: any, noteText: string): jest.CustomMatcherResult {
     let pass = false;
     const message = () => (pass ? "" : `Post does not have a note with '${noteText}'.`);

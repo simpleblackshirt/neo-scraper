@@ -79,6 +79,11 @@ describe("get x.com lightbox post (fixture)", () => {
     expect(res.posts[0]).toHaveTag("sometag");
   });
 
+  it("should attach the profile url to the artist tag only", () => {
+    expect(res.posts[0]).toHaveTagProfileUrl("someartist", "https://x.com/SomeArtist");
+    expect(res.posts[0].tags.find((x) => x.name == "sometag")?.profileUrl).toBeUndefined();
+  });
+
   it("should have the canonical status url as source", () => {
     expect(res.posts[0]).toHaveSource("https://x.com/SomeArtist/status/1234567890");
   });
@@ -112,6 +117,11 @@ describe("get x.com timeline (fixture)", () => {
     expect(res.posts[1]).toHaveTag("artisttwo", "artist");
     expect(res.posts[1]).toHaveTag("news");
     expect(res.posts[0].tags.find((x) => x.name == "artisttwo")).toBeUndefined();
+  });
+
+  it("should attach profile urls per article", () => {
+    expect(res.posts[0]).toHaveTagProfileUrl("artistone", "https://x.com/ArtistOne");
+    expect(res.posts[1]).toHaveTagProfileUrl("artisttwo", "https://x.com/ArtistTwo");
   });
 
   it("should grab the video", () => {
@@ -159,6 +169,7 @@ describe("element grab: single-image tweet", () => {
 
   it("carries the handle as artist tag", () => {
     expect(res.posts[0]).toHaveTag("artistone", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("artistone", "https://x.com/ArtistOne");
   });
 
   it("carries the canonical status url as source", () => {
@@ -252,6 +263,7 @@ describe("element grab: the quote card is its own target", () => {
   it("derives permalink and author from the card's status link", () => {
     expect(res.posts[0]).toHaveSource("https://x.com/QuotedAuthor/status/1971047002982043938");
     expect(res.posts[0]).toHaveTag("quotedauthor", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("quotedauthor", "https://x.com/QuotedAuthor");
     expect(res.posts[0].tags.find((x) => x.name == "outerauthor")).toBeUndefined();
   });
 });
@@ -317,6 +329,7 @@ describe("element grab: quote card detection without the A/B testid", () => {
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/OWN?format=jpg&name=orig");
     expect(res.posts[0]).toHaveTag("outerauthor", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("outerauthor", "https://x.com/OuterAuthor");
   });
 });
 

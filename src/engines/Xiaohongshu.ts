@@ -11,7 +11,7 @@ interface XhsNoteImage {
 
 interface XhsNote {
   title?: string;
-  user?: { nickname?: string };
+  user?: { nickname?: string; userId?: string };
   imageList?: XhsNoteImage[];
   tagList?: { name?: string }[];
   video?: {
@@ -43,6 +43,24 @@ function pickImageUrl(image: XhsNoteImage): string | undefined {
 
 function pickVideoUrl(video: XhsNote["video"]): string | undefined {
   return video?.media?.videoUrl ?? video?.media?.url ?? video?.media?.stream?.h264?.[0]?.masterUrl;
+}
+
+/**
+ * Resolves a possibly relative URL against the page URL.
+ */
+function absoluteUrl(url: string, baseUrl: string): string {
+  try {
+    return new URL(url, baseUrl).href;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * The author's profile url from their user id.
+ */
+function profileUrlFromUserId(userId: string | undefined): string | undefined {
+  return userId ? "https://www.xiaohongshu.com/user/profile/" + userId : undefined;
 }
 
 /** Returns the index just after the closing quote of the string literal starting at `start`. */
@@ -251,7 +269,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
       }
     }
     if (note?.user?.nickname) {
-      tags.push(new ScrapedTag(note.user.nickname, "artist"));
+      tags.push(new ScrapedTag(note.user.nickname, "artist", profileUrlFromUserId(note.user.userId)));
     }
 
     const sources = this.getSourceUrls(document, noteId);
@@ -310,12 +328,17 @@ export default class Xiaohongshu extends ScrapeEngineBase {
           overlayTags.push(new ScrapedTag(name));
         }
       }
+      const authorAnchor = scope.querySelector<HTMLAnchorElement>(".author-container a.name");
       const authorName =
-        scope.querySelector(".author-container a.name")?.textContent ??
+        authorAnchor?.textContent ??
         scope.querySelector(".author-container span.username")?.textContent ??
         scope.querySelector(".author .name")?.textContent;
       if (authorName?.trim()) {
-        overlayTags.push(new ScrapedTag(authorName.trim(), "artist"));
+        // The name anchor links to the author's profile; the span variant
+        // renders without a link, in which case no profile url is known.
+        const href = authorAnchor?.getAttribute("href");
+        const profileUrl = href ? absoluteUrl(href, document.location.href) : undefined;
+        overlayTags.push(new ScrapedTag(authorName.trim(), "artist", profileUrl));
       }
 
       // Video notes render a player into the slider.

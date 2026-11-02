@@ -21,13 +21,20 @@ export function getOriginalImageUrl(image: HTMLImageElement) {
 }
 
 /**
+ * The artist tag for an author handle, with the profile url attached.
+ */
+function artistTagFromHandle(handle: string): ScrapedTag {
+  return new ScrapedTag(handle, "artist", "https://x.com/" + handle);
+}
+
+/**
  * Extracts the author handle from a tweet article and returns it as an artist tag.
  */
 function artistFromArticle(article: Element): ScrapedTag | undefined {
   const authorLink = article.querySelector<HTMLAnchorElement>("div[data-testid='User-Name'] a[href^='/']");
   const handle = authorLink?.getAttribute("href")?.split("/")[1];
   if (handle) {
-    return new ScrapedTag(handle, "artist");
+    return artistTagFromHandle(handle);
   }
   return undefined;
 }
@@ -183,7 +190,7 @@ export default class Twitter extends ScrapeEngineBase {
 
     const match = card.querySelector("a[href*='/status/']")?.getAttribute("href")?.match(/\/([^/]+)\/status\/(\d+)/);
     const source = match ? `https://x.com/${match[1]}/status/${match[2]}` : undefined;
-    const artist = match ? new ScrapedTag(match[1], "artist") : undefined;
+    const artist = match ? artistTagFromHandle(match[1]) : undefined;
 
     for (const img of Array.from(card.querySelectorAll<HTMLImageElement>("div[data-testid='tweetPhoto'] img"))) {
       const post = new ScrapedPost();

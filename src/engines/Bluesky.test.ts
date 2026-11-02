@@ -41,6 +41,7 @@ describe("get bsky.app post (fixture)", () => {
 
   it("should have the author handle as artist tag", () => {
     expect(res.posts[0]).toHaveTag("shannahc", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("shannahc", "https://bsky.app/profile/shannahc.bsky.social");
   });
 });
 
@@ -96,6 +97,7 @@ describe("get bsky.app multi-image post (fixture)", () => {
       expect(post).toHaveTag("pets");
       expect(post).toHaveTag("art");
       expect(post).toHaveTag("simply0silver", "artist");
+      expect(post).toHaveTagProfileUrl("simply0silver", "https://bsky.app/profile/simply0silver.bsky.social");
     }
   });
 });
@@ -127,9 +129,11 @@ describe("get bsky.app feed without leaking tags between posts (fixture)", () =>
   it("should only apply tags from the post that owns each image", () => {
     expect(res.posts[0]).toHaveTag("caturday");
     expect(res.posts[0]).toHaveTag("artista", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("artista", "https://bsky.app/profile/artista.bsky.social");
 
     expect(res.posts[1].tags.find((x) => x.name == "caturday")).toBeUndefined();
     expect(res.posts[1]).toHaveTag("artistb", "artist");
+    expect(res.posts[1]).toHaveTagProfileUrl("artistb", "https://bsky.app/profile/artistb.bsky.social");
   });
 });
 
@@ -167,6 +171,7 @@ describe("get bsky.app fullscreen post (fixture)", () => {
   it("should grab the tags of the fullscreen post", () => {
     expect(res.posts[0]).toHaveTag("blackcatbookclub");
     expect(res.posts[0]).toHaveTag("shannahc", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("shannahc", "https://bsky.app/profile/shannahc.bsky.social");
   });
 });
 
@@ -318,6 +323,7 @@ describe("element grab: permalink page with liked-by links", () => {
     const res = scrapeElementFixture(pageUrl, html, "img[src*='feed_thumbnail']");
     expect(res.posts.length).toBe(1);
     expect(res.posts[0]).toHaveTag("author", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("author", "https://bsky.app/profile/author.bsky.social");
     expect(res.posts[0].tags.find((x) => x.name == "liker")).toBeUndefined();
     expect(res.posts[0].sources).toEqual([]);
     expect(res.posts[0].pageUrl).toBe(pageUrl);
