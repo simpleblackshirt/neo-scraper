@@ -103,8 +103,6 @@ export default class Twitter extends ScrapeEngineBase {
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
     "Hashtags become tags and the author's handle becomes an artist tag.",
-    "X redesigns its DOM frequently, so this engine can break at any time.",
-    "Element grabs (context menu): quote cards are their own grab target, video-only tweets are skipped because the real mp4 never reaches the DOM (blob: MSE streaming), and posts upload from client-fetched content because Twitter's CDNs intermittently 403 server-side downloads.",
   ];
   supportedHosts = ["twitter.com", "mobile.twitter.com", "x.com"];
 

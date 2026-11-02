@@ -164,8 +164,7 @@ export default class Xiaohongshu extends ScrapeEngineBase {
   name = "xiaohongshu";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
-    "Scrapes note pages via the page's embedded __INITIAL_STATE__ JSON, the note viewer overlay DOM (notes opened from a listing), then og:image as a last resort.",
-    "The author's nickname becomes an artist tag. Xiaohongshu changes its internals often, so this engine can break at any time.",
+    "The author's nickname becomes an artist tag.",
     "Multi-image notes are scraped as multiple posts.",
   ];
   supportedHosts = ["xiaohongshu.com", "rednote.com"];

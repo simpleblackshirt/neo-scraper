@@ -163,11 +163,8 @@ export default class Lofter extends ScrapeEngineBase {
   name = "lofter";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
-    "Document scrape only acts on post permalinks (…lofter.com/post/…); element grabs (context menu) work on any card - the user aimed at a specific post.",
-    "The artist tag is derived from the post's blog subdomain (the permalink hostname, or the card's author link on the dashboard).",
+    "The artist tag is derived from the blog's subdomain.",
     "Multi-image posts are scraped as multiple posts.",
-    "User avatars (blog owner icon, like/comment lists) are excluded.",
-    "Element grabs on the image viewer overlay are content-only: the overlay renders the enlarged rendition without any author, permalink or tag information. The extension's click tracker resolves the underlying card whenever the viewer was opened by a normal click.",
   ];
   supportedHosts = ["lofter.com"];
 

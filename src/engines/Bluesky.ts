@@ -168,9 +168,8 @@ export default class Bluesky extends ScrapeEngineBase {
   name = "bluesky";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category"];
   notes = [
-    "Hashtags become tags and the author's handle becomes an artist tag (.bsky.social suffix dropped).",
+    "Hashtags become tags and the author's handle becomes an artist tag.",
     "Tags may be unavailable in the fullscreen image viewer when the post text is not rendered.",
-    "Element grabs (context menu): the fullscreen viewer yields a content-only post (the dialog renders no metadata); embedded quote cards are their own grab target with the quoted author's profile url as source, since cards render no post id.",
   ];
   supportedHosts = ["bsky.app"];
 

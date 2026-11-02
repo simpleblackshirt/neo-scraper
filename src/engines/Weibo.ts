@@ -177,9 +177,8 @@ export default class Weibo extends ScrapeEngineBase {
   name = "weibo";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
-    "Document scrape only acts on status permalinks (weibo.com/<uid>/<bid>, weibo.com/u/<uid>/<bid>, m.weibo.cn/status/…, m.weibo.cn/detail/…); element grabs (context menu) work on any card - the user aimed at a specific post.",
-    "The author's display name becomes an artist tag. Weibo redesigns its DOM often, so this engine can break at any time.",
-    "Multi-image posts are scraped as multiple posts. Element grabs upload from client-fetched content (sinaimg 403s server-side downloads without a referer).",
+    "The author's display name becomes an artist tag.",
+    "Multi-image posts are scraped as multiple posts.",
   ];
   supportedHosts = ["weibo.com", "m.weibo.cn", "weibo.cn", "weibo.com.cn"];
 
