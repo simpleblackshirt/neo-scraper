@@ -1,6 +1,6 @@
 import { JSDOM } from "jsdom";
 import { ScrapeResults } from "../ScrapeEngine.js";
-import Twitter, { getOriginalImageUrlFromUrl } from "./Twitter.js";
+import Twitter, { getOriginalImageUrl, getOriginalImageUrlFromUrl } from "./Twitter.js";
 import { scrapeEvalUrl } from "../test/engine.js";
 import { scrapeElementFixture, scrapeFixture } from "../test/fixture.js";
 
@@ -24,6 +24,24 @@ describe("getOriginalImageUrlFromUrl", () => {
     expect(getOriginalImageUrlFromUrl("https://pbs.twimg.com/media/abc?format=jpg&name=orig")).toBe(
       "https://pbs.twimg.com/media/abc?format=jpg&name=orig",
     );
+  });
+});
+
+describe("getOriginalImageUrl", () => {
+  it("returns undefined for imgs without a usable src instead of throwing", () => {
+    const doc = new JSDOM().window.document;
+    const empty = doc.createElement("img");
+    expect(getOriginalImageUrl(empty)).toBeUndefined();
+    const missing = doc.createElement("img");
+    missing.src = "";
+    expect(getOriginalImageUrl(missing)).toBeUndefined();
+  });
+
+  it("still upgrades usable srcs", () => {
+    const doc = new JSDOM().window.document;
+    const img = doc.createElement("img");
+    img.src = "https://pbs.twimg.com/media/abc?format=jpg&name=small";
+    expect(getOriginalImageUrl(img)?.href).toBe("https://pbs.twimg.com/media/abc?format=jpg&name=orig");
   });
 });
 
@@ -340,6 +358,36 @@ describe("element grab: document scrape keeps legacy quote behavior", () => {
       "https://pbs.twimg.com/media/OWN?format=jpg&name=orig",
       "https://pbs.twimg.com/media/QUOTED?format=jpg&name=orig",
     ].sort());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Placeholder images (lazy/unloaded tweets render tweetPhoto imgs without a
+// src). A previously-throwing `new URL("")` aborted the whole element grab -
+// such images must be skipped so the loaded ones still scrape.
+// ---------------------------------------------------------------------------
+
+const placeholderTweet = `
+  <article data-testid="tweet" tabindex="0">
+    <div data-testid="User-Name"><a href="/ArtistOne"><span>Artist One</span></a></div>
+    <div><a href="/ArtistOne/status/111"><time datetime="2026-11-04T07:00:00.000Z">2h</time></a></div>
+    <a role="link" href="/ArtistOne/status/111/photo/1">
+      <div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/HU1?format=jpg&amp;name=small"></div>
+    </a>
+    <a role="link" href="/ArtistOne/status/111/photo/2">
+      <div data-testid="tweetPhoto"><img></div>
+    </a>
+  </article>`;
+
+describe("element grab: placeholder image without src is skipped", () => {
+  it("grabs the loaded image instead of aborting the whole tweet", () => {
+    const html = `<html><body>${placeholderTweet}</body></html>`;
+    const res = scrapeElementFixture("https://x.com/home", html, "img[src*='HU1']");
+
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/HU1?format=jpg&name=orig");
+    expect(res.posts[0]).toHaveTag("artistone", "artist");
+    expect(res.posts[0]).toHaveTagProfileUrl("artistone", "https://x.com/ArtistOne");
   });
 });
 

@@ -16,8 +16,19 @@ export function getOriginalImageUrlFromUrl(url: string) {
   return parsed.href;
 }
 
-export function getOriginalImageUrl(image: HTMLImageElement) {
-  return new URL(getOriginalImageUrlFromUrl(image.src));
+/**
+ * Media imgs can render without a usable src (lazy placeholders); one of them
+ * must not abort the whole grab - such images are skipped (undefined).
+ */
+export function getOriginalImageUrl(image: HTMLImageElement): URL | undefined {
+  if (!image.getAttribute("src")) {
+    return undefined;
+  }
+  try {
+    return new URL(getOriginalImageUrlFromUrl(image.src));
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -99,7 +110,10 @@ function ownPhotoUrls(article: Element): string[] {
     if (ownStatusId && mediaStatusId && mediaStatusId !== ownStatusId) {
       continue;
     }
-    seenUrls.add(getOriginalImageUrl(img).href);
+    const url = getOriginalImageUrl(img);
+    if (url) {
+      seenUrls.add(url.href);
+    }
   }
 
   return [...seenUrls];
@@ -193,9 +207,13 @@ export default class Twitter extends ScrapeEngineBase {
     const artist = match ? artistTagFromHandle(match[1]) : undefined;
 
     for (const img of Array.from(card.querySelectorAll<HTMLImageElement>("div[data-testid='tweetPhoto'] img"))) {
+      const contentUrl = getOriginalImageUrl(img);
+      if (!contentUrl) {
+        continue;
+      }
       const post = new ScrapedPost();
       post.pageUrl = source ?? pageUrlFrom(card);
-      post.contentUrl = getOriginalImageUrl(img).href;
+      post.contentUrl = contentUrl.href;
       post.contentType = "image";
       post.sources = source ? [source] : [];
       post.tags = artist ? [artist] : [];
@@ -275,7 +293,10 @@ export default class Twitter extends ScrapeEngineBase {
       focusedImgs = Array.from(dialog.querySelectorAll<HTMLImageElement>("div[data-testid='swipe-to-dismiss'] img"));
     }
     for (const img of focusedImgs) {
-      addPost(getOriginalImageUrl(img).href);
+      const url = getOriginalImageUrl(img);
+      if (url) {
+        addPost(url.href);
+      }
     }
 
     // No focused image reachable - fall back to the focused tweet's own photos.
@@ -330,7 +351,10 @@ export default class Twitter extends ScrapeEngineBase {
         lightboxImgs.push(centerImg);
       }
       for (const img of lightboxImgs) {
-        addPost(getOriginalImageUrl(img).href, "image", artist ? hashtags.concat([artist]) : hashtags.slice(), source);
+        const url = getOriginalImageUrl(img);
+        if (url) {
+          addPost(url.href, "image", artist ? hashtags.concat([artist]) : hashtags.slice(), source);
+        }
       }
     }
 
@@ -344,7 +368,10 @@ export default class Twitter extends ScrapeEngineBase {
 
       const imgs = Array.from(tweetArticle.querySelectorAll<HTMLImageElement>("div[data-testid='tweetPhoto'] img"));
       for (const img of imgs) {
-        addPost(getOriginalImageUrl(img).href, "image", articleTags, articleSource);
+        const url = getOriginalImageUrl(img);
+        if (url) {
+          addPost(url.href, "image", articleTags, articleSource);
+        }
       }
 
       const videoSrc =
