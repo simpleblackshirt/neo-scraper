@@ -337,6 +337,10 @@ export default class Twitter extends ScrapeEngineBase {
       post.contentType = contentType;
       post.sources = [source];
       post.tags = tags.slice();
+      // twimg (pbs.twimg.com, video.twimg.com) rejects non-browser fetches,
+      // so the szurubooru server cannot download these urls - the consumer
+      // must fetch them itself. Matches the element-grab paths above.
+      post.uploadMode = "content";
       result.tryAddPost(post);
     };
 

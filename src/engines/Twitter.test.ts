@@ -92,6 +92,10 @@ describe("get x.com lightbox post (fixture)", () => {
     expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/XXX?format=jpg&name=orig");
   });
 
+  it("uploads from client-fetched content (Twitter CDNs 403 server-side downloads)", () => {
+    expect(res.posts[0].uploadMode).toBe("content");
+  });
+
   it("should have the handle as artist tag and the hashtag as tag", () => {
     expect(res.posts[0]).toHaveTag("someartist", "artist");
     expect(res.posts[0]).toHaveTag("sometag");
@@ -145,6 +149,11 @@ describe("get x.com timeline (fixture)", () => {
   it("should grab the video", () => {
     expect(res.posts[1].contentType).toBe("video");
     expect(res.posts[1].contentUrl).toBe("https://video.twimg.com/xyz.mp4");
+  });
+
+  it("uploads both image and video from client-fetched content (twimg 403s server-side downloads)", () => {
+    expect(res.posts[0].uploadMode).toBe("content");
+    expect(res.posts[1].uploadMode).toBe("content");
   });
 });
 
