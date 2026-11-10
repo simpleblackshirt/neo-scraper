@@ -55,7 +55,7 @@ describe("get twitter.com post", () => {
 
   it("should grab original image url", async () => {
     expect(res.posts.length).toBe(1);
-    expect(res.posts[0].pageUrl).toBe(pageUrl);
+    expect(res.posts[0].pageUrl).toBe("https://x.com/Dishwasher1910/status/1171162651461746688");
     expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/EEDOOCdU0AAHX00?format=jpg&name=orig");
   });
 });
@@ -109,6 +109,12 @@ describe("get x.com lightbox post (fixture)", () => {
   it("should have the canonical status url as source", () => {
     expect(res.posts[0]).toHaveSource("https://x.com/SomeArtist/status/1234567890");
   });
+
+  it("should have the canonical status url as pageUrl (never the browsed /photo/N page)", () => {
+    // The lightbox is browsed on /status/<id>/photo/N (history/media tab);
+    // consumers append pageUrl to the source, so the view suffix must not leak.
+    expect(res.posts[0].pageUrl).toBe("https://x.com/SomeArtist/status/1234567890");
+  });
 });
 
 describe("get x.com timeline (fixture)", () => {
@@ -116,11 +122,13 @@ describe("get x.com timeline (fixture)", () => {
   const html = `<html><body>
     <article>
       <div data-testid="User-Name"><a href="/ArtistOne"><span>Artist One</span></a></div>
+      <div><a href="/ArtistOne/status/1111111111"><time datetime="2026-11-10T07:00:00.000Z">2h</time></a></div>
       <a role="link"><div data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/AAA?format=jpg&amp;name=large"></div></a>
     </article>
     <article>
       <div data-testid="User-Name"><a href="/ArtistTwo"><span>Artist Two</span></a></div>
-      <div><a href="/ArtistTwo/status/9876543210/hashtag/News"><span>#News</span></a></div>
+      <div><a href="/ArtistTwo/status/2222222222"><time datetime="2026-11-10T06:00:00.000Z">3h</time></a></div>
+      <div><a href="/ArtistTwo/status/2222222222/hashtag/News"><span>#News</span></a></div>
       <a role="link"><div data-testid="videoPlayer"><video><source src="https://video.twimg.com/xyz.mp4"></video></div></a>
     </article>
     </body></html>`;
@@ -139,6 +147,13 @@ describe("get x.com timeline (fixture)", () => {
     expect(res.posts[1]).toHaveTag("artisttwo", "artist");
     expect(res.posts[1]).toHaveTag("news");
     expect(res.posts[0].tags.find((x) => x.name == "artisttwo")).toBeUndefined();
+  });
+
+  it("anchors source and pageUrl to each article's own status, not the browsing page", () => {
+    expect(res.posts[0]).toHaveSource("https://x.com/ArtistOne/status/1111111111");
+    expect(res.posts[0].pageUrl).toBe("https://x.com/ArtistOne/status/1111111111");
+    expect(res.posts[1]).toHaveSource("https://x.com/ArtistTwo/status/2222222222");
+    expect(res.posts[1].pageUrl).toBe("https://x.com/ArtistTwo/status/2222222222");
   });
 
   it("should attach profile urls per article", () => {

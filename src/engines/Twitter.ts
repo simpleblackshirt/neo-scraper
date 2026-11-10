@@ -332,7 +332,9 @@ export default class Twitter extends ScrapeEngineBase {
       seenUrls.add(contentUrl);
 
       const post = new ScrapedPost();
-      post.pageUrl = document.location.href;
+      // Same convention as the element grabs: pageUrl is the post's canonical
+      // permalink, not the raw browsing page
+      post.pageUrl = source;
       post.contentUrl = contentUrl;
       post.contentType = contentType;
       post.sources = [source];
