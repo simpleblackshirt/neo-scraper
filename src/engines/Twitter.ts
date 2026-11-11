@@ -93,6 +93,50 @@ function pageUrlFrom(container: Element): string {
 }
 
 /**
+ * How much of an image's layout box intersects the viewport.
+ *
+ * 0 without layout metrics (documentElement size 0 in jsdom fixtures and some
+ * headless setups) or for zero-sized boxes - callers must treat 0 everywhere
+ * as "indistinguishable" and keep their legacy behavior.
+ */
+function viewportOverlapArea(image: HTMLImageElement): number {
+  const rect = image.getBoundingClientRect();
+  const doc = image.ownerDocument;
+  const viewWidth = doc.documentElement?.clientWidth ?? 0;
+  const viewHeight = doc.documentElement?.clientHeight ?? 0;
+  if (rect.width <= 0 || rect.height <= 0 || viewWidth <= 0 || viewHeight <= 0) {
+    return 0;
+  }
+  const left = Math.max(rect.left, 0);
+  const right = Math.min(rect.right, viewWidth);
+  const top = Math.max(rect.top, 0);
+  const bottom = Math.min(rect.bottom, viewHeight);
+  return Math.max(right - left, 0) * Math.max(bottom - top, 0);
+}
+
+/**
+ * The candidate actually rendered on screen: the one with the largest
+ * viewport overlap. x.com's photo lightbox is a carousel whose navigated
+ * slides STAY MOUNTED (parked fully offscreen left/right, the next photo
+ * preloaded right of the viewport) in stale-first DOM order, so DOM order
+ * alone picks the previously-viewed image. Tie-breaks toward DOM order.
+ * Returns undefined when no candidate overlaps the viewport or layout
+ * metrics are unavailable - callers keep their legacy behavior then.
+ */
+function pickFocusedImage(images: HTMLImageElement[]): HTMLImageElement | undefined {
+  let best: HTMLImageElement | undefined = undefined;
+  let bestArea = 0;
+  for (const image of images) {
+    const area = viewportOverlapArea(image);
+    if (area > bestArea) {
+      best = image;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+/**
  * Photo urls of a tweet article with quoted-tweet media excluded: quotes
  * render their media inside the condensed card, and that card's media links
  * point at the quoted status, not the article's own.
@@ -292,7 +336,15 @@ export default class Twitter extends ScrapeEngineBase {
     if (focusedImgs.length == 0) {
       focusedImgs = Array.from(dialog.querySelectorAll<HTMLImageElement>("div[data-testid='swipe-to-dismiss'] img"));
     }
-    for (const img of focusedImgs) {
+
+    // The lightbox media pane is a carousel that keeps every navigated slide
+    // mounted (parked offscreen left/right, next photo preloaded right) in
+    // stale-first DOM order. Element grabs identify ONE post: the slide
+    // actually on screen. Without layout metrics (jsdom fixtures) the legacy
+    // all-slides behavior is kept.
+    const onScreenImg = pickFocusedImage(focusedImgs);
+    const targets = onScreenImg ? [onScreenImg] : focusedImgs;
+    for (const img of targets) {
       const url = getOriginalImageUrl(img);
       if (url) {
         addPost(url.href);
@@ -356,10 +408,21 @@ export default class Twitter extends ScrapeEngineBase {
       if (centerImg) {
         lightboxImgs.push(centerImg);
       }
-      for (const img of lightboxImgs) {
+      // The lightbox media pane is a carousel that keeps every navigated slide
+      // mounted in stale-first DOM order (parked offscreen left/right, next
+      // photo preloaded right). Consumers default to the first post, so the
+      // on-screen slide is emitted first; the rest of the legacy sweep (parked
+      // slides, thread photos) follows. Without layout metrics (jsdom
+      // fixtures) the sweep runs in legacy DOM order.
+      const onScreenImg = pickFocusedImage(lightboxImgs);
+      const orderedImgs = onScreenImg
+        ? [onScreenImg, ...lightboxImgs.filter((img) => img !== onScreenImg)]
+        : lightboxImgs;
+      const lightboxTags = artist ? hashtags.concat([artist]) : hashtags.slice();
+      for (const img of orderedImgs) {
         const url = getOriginalImageUrl(img);
         if (url) {
-          addPost(url.href, "image", artist ? hashtags.concat([artist]) : hashtags.slice(), source);
+          addPost(url.href, "image", lightboxTags, source);
         }
       }
     }

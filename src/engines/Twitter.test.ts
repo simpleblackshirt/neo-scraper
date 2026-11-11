@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import { ScrapeResults } from "../ScrapeEngine.js";
+import NeoScraper from "../NeoScraper.js";
 import Twitter, { getOriginalImageUrl, getOriginalImageUrlFromUrl } from "./Twitter.js";
 import { scrapeEvalUrl } from "../test/engine.js";
 import { scrapeElementFixture, scrapeFixture } from "../test/fixture.js";
@@ -512,6 +513,133 @@ describe("element grab: replying to a tweet inside the lightbox thread", () => {
     expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/REPLY?format=jpg&name=orig");
     expect(res.posts[0]).toHaveTag("artisttwo", "artist");
     expect(res.posts[0]).toHaveSource("https://x.com/ArtistTwo/status/222");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gallery carousel. Live capture (2026-11-11, x.com desktop lightbox): the
+// media pane keeps every navigated slide mounted - the previous photo parked
+// fully off the LEFT viewport edge, the focused photo on screen, the next
+// photo preloaded off the RIGHT edge - in stale-first DOM order. Consumers
+// default to the first post, so DOM-order scraping re-uploads the first
+// viewed photo forever (op/opacity checks cannot help: even the on-screen
+// slide reports opacity 0 there, so geometry is the only discriminator).
+// ---------------------------------------------------------------------------
+
+const carouselLightboxHtml = `<html><body>
+  <div role="dialog">
+    <div role="dialog">
+      <ul role="list">
+        <li role="listitem">
+          <div data-testid="swipe-to-dismiss">
+            <div><div><div aria-label="Image"><img alt="Image" src="https://pbs.twimg.com/media/PREV?format=jpg&amp;name=large"></div></div></div>
+          </div>
+        </li>
+        <li role="listitem">
+          <div data-testid="swipe-to-dismiss">
+            <div><div><div aria-label="Image"><img alt="Image" src="https://pbs.twimg.com/media/FOCUS?format=jpg&amp;name=large"></div></div></div>
+          </div>
+        </li>
+        <li role="listitem">
+          <div data-testid="swipe-to-dismiss">
+            <div><div><div aria-label="Image"><img alt="Image" src="https://pbs.twimg.com/media/NEXT?format=jpg&amp;name=large"></div></div></div>
+          </div>
+        </li>
+      </ul>
+      <article data-testid="tweet" tabindex="0">
+        <div data-testid="User-Name">
+          <a href="/ArtistOne"><span>Artist One</span></a>
+          <a href="/ArtistOne/status/111"><time datetime="2026-11-11T07:00:00.000Z">2h</time></a>
+        </div>
+        <div><a href="/ArtistOne/status/111/hashtag/Artnight"><span>#Artnight</span></a></div>
+      </article>
+      <article data-testid="tweet" tabindex="0">
+        <div data-testid="User-Name"><a href="/ArtistTwo"><span>Artist Two</span></a></div>
+        <a role="link" href="/ArtistTwo/status/222/photo/1"><div data-testid="tweetPhoto"><img alt="Image" src="https://pbs.twimg.com/media/REPLY?format=jpg&amp;name=small"></div></a>
+      </article>
+    </div>
+  </div>
+  </body></html>`;
+
+// Viewport and slide rects from the live capture, viewed at photo/2.
+function patchCarouselLayout(doc: Document) {
+  Object.defineProperty(doc.documentElement, "clientWidth", { value: 2088, configurable: true });
+  Object.defineProperty(doc.documentElement, "clientHeight", { value: 1108, configurable: true });
+  const rects: Record<string, { x: number; width: number }> = {
+    PREV: { x: -1266, width: 795 },
+    FOCUS: { x: 353, width: 1031 },
+    NEXT: { x: 2210, width: 795 },
+  };
+  for (const img of Array.from(doc.querySelectorAll("img"))) {
+    const media = img.getAttribute("src")?.match(/media\/([A-Za-z0-9_-]+)/)?.[1];
+    const rect = media ? rects[media] : undefined;
+    if (!rect) {
+      continue;
+    }
+    Object.defineProperty(img, "getBoundingClientRect", {
+      value: () => ({
+        left: rect.x,
+        top: 0,
+        right: rect.x + rect.width,
+        bottom: 1060,
+        width: rect.width,
+        height: 1060,
+      }),
+      configurable: true,
+    });
+  }
+}
+
+describe("element grab: gallery carousel picks the on-screen slide", () => {
+  const pageUrl = "https://x.com/ArtistOne/status/111/photo/2";
+
+  function scrapeCarouselElement(withLayout: boolean) {
+    const dom = new JSDOM(carouselLightboxHtml, { url: pageUrl });
+    if (withLayout) {
+      patchCarouselLayout(dom.window.document);
+    }
+    const target = dom.window.document.querySelector("img[src*='FOCUS']");
+    if (!target) {
+      throw new Error("Fixture has no focused slide image.");
+    }
+    return new NeoScraper().scrapeElement(target);
+  }
+
+  it("grabs exactly the on-screen slide (parked/preloaded slides must not leak)", () => {
+    const res = scrapeCarouselElement(true);
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/FOCUS?format=jpg&name=orig");
+  });
+
+  it("metadata still comes from the dialog's first article (the focused tweet)", () => {
+    const res = scrapeCarouselElement(true);
+    expect(res.posts[0]).toHaveTag("artistone", "artist");
+    expect(res.posts[0]).toHaveTag("artnight");
+    expect(res.posts[0]).toHaveSource("https://x.com/ArtistOne/status/111");
+    expect(res.posts[0].tags.find((x) => x.name == "artisttwo")).toBeUndefined();
+  });
+
+  it("keeps the legacy all-slides DOM order without layout metrics (jsdom)", () => {
+    const res = scrapeCarouselElement(false);
+    expect(res.posts.map((p) => p.contentUrl)).toEqual([
+      "https://pbs.twimg.com/media/PREV?format=jpg&name=orig",
+      "https://pbs.twimg.com/media/FOCUS?format=jpg&name=orig",
+      "https://pbs.twimg.com/media/NEXT?format=jpg&name=orig",
+    ]);
+  });
+});
+
+describe("document grab: gallery carousel focused slide is emitted first", () => {
+  it("defaults consumers to the on-screen slide, legacy sweep follows in DOM order", () => {
+    const dom = new JSDOM(carouselLightboxHtml, { url: "https://x.com/ArtistOne/status/111/photo/2" });
+    patchCarouselLayout(dom.window.document);
+    const res = new NeoScraper().scrapeDocument(dom.window.document);
+    expect(res.posts.map((p) => p.contentUrl)).toEqual([
+      "https://pbs.twimg.com/media/FOCUS?format=jpg&name=orig", // hoisted on-screen slide
+      "https://pbs.twimg.com/media/PREV?format=jpg&name=orig", // legacy sweep: parked slides
+      "https://pbs.twimg.com/media/NEXT?format=jpg&name=orig",
+      "https://pbs.twimg.com/media/REPLY?format=jpg&name=orig", // legacy sweep: thread photos
+    ]);
   });
 });
 
