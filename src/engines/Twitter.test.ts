@@ -416,7 +416,42 @@ describe("element grab: placeholder image without src is skipped", () => {
   });
 });
 
-describe("element grab: video-only tweet emits a resolver placeholder", () => {
+describe("element grab: video-only tweet before play (poster still, no video src)", () => {
+  const html = `<html><body>
+    <article data-testid="tweet" tabindex="0">
+      <div data-testid="User-Name">
+        <a href="/ArtistOne"><span>Artist One</span></a>
+        <a href="/ArtistOne/status/333"><time datetime="2026-10-19T02:30:00.000Z">6h</time></a>
+      </div>
+      <div data-testid="tweetPhoto">
+        <div data-testid="placementTracking">
+          <div data-testid="videoPlayer">
+            <img alt="Image" src="https://pbs.twimg.com/amplify_video_thumb/999/img/abc.jpg">
+            <video preload="none" playsinline="" aria-label="Embedded video" poster="https://pbs.twimg.com/amplify_video_thumb/999/img/abc.jpg"></video>
+          </div>
+        </div>
+      </div>
+    </article>
+    </body></html>`;
+
+  it("emits one video post carrying the poster placeholder for the consumer's mp4 resolver", () => {
+    const res = scrapeElementFixture("https://x.com/home", html, "[data-testid='videoPlayer']");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentType).toBe("video");
+    expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/amplify_video_thumb/999/img/abc.jpg");
+    expect(res.posts[0]).toHaveSource("https://x.com/ArtistOne/status/333");
+    expect(res.posts[0].pageUrl).toBe("https://x.com/ArtistOne/status/333");
+    expect(res.posts[0]).toHaveTag("artistone", "artist");
+    expect(res.posts[0].uploadMode).toBe("content");
+  });
+
+  it("does not leak the player's poster img as an extra photo post", () => {
+    const res = scrapeElementFixture("https://x.com/home", html, "img[src*='amplify_video_thumb']");
+    expect(res.posts.map((p) => p.contentType)).toEqual(["video"]);
+  });
+});
+
+describe("element grab: video-only tweet played (blob stream pointer)", () => {
   const html = `<html><body>
     <article data-testid="tweet" tabindex="0">
       <div data-testid="User-Name">
@@ -449,7 +484,7 @@ describe("element grab: video-only tweet emits a resolver placeholder", () => {
   });
 });
 
-describe("element grab: tweet with both photo and video player", () => {
+describe("element grab: tweet with both photo and video player emits both (option B)", () => {
   const html = `<html><body>
     <article data-testid="tweet" tabindex="0">
       <div data-testid="User-Name"><a href="/ArtistOne"><span>Artist One</span></a></div>
@@ -460,10 +495,60 @@ describe("element grab: tweet with both photo and video player", () => {
     </article>
     </body></html>`;
 
-  it("grabs the photo and stays photo-only (mixed media resolution is out of scope)", () => {
+  it("grabs the photo AND a video placeholder post", () => {
     const res = scrapeElementFixture("https://x.com/home", html, "img");
-    expect(res.posts.length).toBe(1);
+    expect(res.posts).toHaveLength(2);
+    expect(res.posts[0].contentType).toBe("image");
     expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/AAA?format=jpg&name=orig");
+    expect(res.posts[1].contentType).toBe("video");
+    expect(res.posts[1].contentUrl).toBe("blob:https://x.com/x");
+  });
+});
+
+describe("element grab: video player without the videoPlayer wrapper (A/B layout)", () => {
+  const html = `<html><body>
+    <article data-testid="tweet" tabindex="0">
+      <div data-testid="User-Name">
+        <a href="/ArtistOne"><span>Artist One</span></a>
+        <a href="/ArtistOne/status/444"><time datetime="2026-11-20T02:30:00.000Z">6h</time></a>
+      </div>
+      <div data-testid="tweetPhoto">
+        <img alt="Image" src="https://pbs.twimg.com/amplify_video_thumb/555/img/poster.jpg">
+        <video preload="none" aria-label="Embedded video" poster="https://pbs.twimg.com/amplify_video_thumb/555/img/poster.jpg"></video>
+      </div>
+    </article>
+    </body></html>`;
+
+  it("recognizes the photo-container video as the tweet's video, not a photo", () => {
+    const res = scrapeElementFixture("https://x.com/home", html, "img[src*='amplify_video_thumb']");
+    expect(res.posts).toHaveLength(1);
+    expect(res.posts[0].contentType).toBe("video");
+    expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/amplify_video_thumb/555/img/poster.jpg");
+    expect(res.posts[0]).toHaveSource("https://x.com/ArtistOne/status/444");
+  });
+});
+
+describe("document grab: pre-play video-only tweet emits the poster placeholder", () => {
+  const html = `<html><body>
+    <article data-testid="tweet" tabindex="0">
+      <div data-testid="User-Name"><a href="/ArtistOne"><span>Artist One</span></a></div>
+      <div><a href="/ArtistOne/status/555"><time datetime="2026-11-20T07:00:00.000Z">2h</time></a></div>
+      <div data-testid="tweetPhoto">
+        <div data-testid="placementTracking">
+          <div data-testid="videoPlayer">
+            <img alt="Image" src="https://pbs.twimg.com/amplify_video_thumb/777/img/thumb.jpg">
+            <video preload="none" poster="https://pbs.twimg.com/amplify_video_thumb/777/img/thumb.jpg"></video>
+          </div>
+        </div>
+      </div>
+    </article>
+    </body></html>`;
+
+  it("emits exactly one video post (the poster img must not double up)", () => {
+    const res = scrapeFixture("https://x.com/ArtistOne/status/555", html);
+    expect(res.posts).toHaveLength(1);
+    expect(res.posts[0].contentType).toBe("video");
+    expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/amplify_video_thumb/777/img/thumb.jpg");
   });
 });
 

@@ -521,3 +521,130 @@ describe("toolbar grab on a post page with the feed still mounted (fixture)", ()
     expect(res.posts.length).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Video-post poster stills. Live capture (2026-11-20, bsky.app desktop):
+// BEFORE the player mounts, a video post renders NO <video> and NO content
+// <img> - its poster is a css background-image div pointing at
+// video.bsky.app/.../thumbnail.jpg, and that is the only dom evidence of the
+// video. The extension's bluesky resolver classifies candidates via the
+// AppView API and swaps video posts to the real stream.
+// ---------------------------------------------------------------------------
+
+const videoPosterStyle =
+  'background-image: url(&quot;https://video.bsky.app/watch/did%3Aplc%3Axyz/bafkreithumb/thumbnail.jpg&quot;);';
+
+describe("get bsky.app video post permalink before play (fixture)", () => {
+  const pageUrl = "https://bsky.app/profile/bsky.app/post/3n2opitxdyc2j";
+  const html = `<html><body>
+    <div data-testid="postThreadItem-by-bsky.app">
+      <a href="/profile/bsky.app" aria-label="Bluesky's avatar"></a>
+      <a href="/profile/bsky.app"><span>Bluesky</span></a>
+      <div>post text</div>
+      <button role="button" tabindex="0">
+        <div style="${videoPosterStyle}"></div>
+      </button>
+    </div>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("emits the css poster still as the video post's candidate", () => {
+    expect(res.posts).toHaveLength(1);
+    expect(res.posts[0].contentUrl).toBe(
+      "https://video.bsky.app/watch/did%3Aplc%3Axyz/bafkreithumb/thumbnail.jpg",
+    );
+  });
+
+  it("keeps the author tag and the canonical page url (the resolver keys off it)", () => {
+    expect(res.posts[0]).toHaveTag("bsky.app", "artist");
+    expect(res.posts[0].pageUrl).toBe(pageUrl);
+  });
+});
+
+describe("get bsky.app feed mixing image and video posts (fixture)", () => {
+  const pageUrl = "https://bsky.app/";
+  const html = `<html><body>
+    <div>
+      <div data-testid="feedItem-1">
+        <a href="/profile/artist.bsky.social"></a>
+        <a href="/profile/artist.bsky.social"><span>Artist</span></a>
+        <div><a href="/profile/artist.bsky.social/post/3kimgpostaaa1"><div><button><div><img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/bafkreiimg"></div></button></div></a></div>
+        <div><a href="/profile/artist.bsky.social/post/3kimgpostaaa1"><time>1h</time></a></div>
+      </div>
+      <div data-testid="feedItem-2">
+        <a href="/profile/other.bsky.social"></a>
+        <a href="/profile/other.bsky.social"><span>Other</span></a>
+        <div><button role="button"><div style="${videoPosterStyle}"></div></button></div>
+        <div><a href="/profile/other.bsky.social/post/3kvidpostaaa2"><time>2h</time></a></div>
+      </div>
+    </div>
+    </body></html>`;
+  let res: ScrapeResults;
+
+  beforeAll(() => {
+    res = scrapeFixture(pageUrl, html);
+  });
+
+  it("emits one post per post, image and video candidate alike", () => {
+    expect(res.posts).toHaveLength(2);
+    expect(res.posts[0].contentUrl).toBe("https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:abc/bafkreiimg");
+    expect(res.posts[1].contentUrl).toBe(
+      "https://video.bsky.app/watch/did%3Aplc%3Axyz/bafkreithumb/thumbnail.jpg",
+    );
+  });
+
+  it("anchors each candidate to its own post's permalink", () => {
+    expect(res.posts[0]).toHaveSource("https://bsky.app/profile/artist.bsky.social/post/3kimgpostaaa1");
+    expect(res.posts[1]).toHaveSource("https://bsky.app/profile/other.bsky.social/post/3kvidpostaaa2");
+    expect(res.posts[1]).toHaveTag("other", "artist");
+  });
+});
+
+describe("get bsky.app video post played - poster div and feed img both exist (fixture)", () => {
+  const pageUrl = "https://bsky.app/profile/bsky.app/post/3n2opitxdyc2j";
+  const html = `<html><body>
+    <div data-testid="postThreadItem-by-bsky.app">
+      <a href="/profile/bsky.app"><span>Bluesky</span></a>
+      <button role="button">
+        <div data-expoimage="true"><div><img src="https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:xyz/bafkreithumbimg"></div></div>
+        <div style="${videoPosterStyle}"></div>
+      </button>
+    </div>
+    </body></html>`;
+
+  it("emits exactly one post - the img wins, the css poster does not double up", () => {
+    const res = scrapeFixture(pageUrl, html);
+    expect(res.posts).toHaveLength(1);
+    expect(res.posts[0].contentUrl).toBe("https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:xyz/bafkreithumbimg");
+  });
+});
+
+describe("element grab: video poster candidates (fixture)", () => {
+  const videoPostHtml = `<html><body>
+    <div data-testid="postThreadItem-by-bsky.app">
+      <a href="/profile/bsky.app"><span>Bluesky</span></a>
+      <div><a href="/profile/bsky.app/post/3n2opitxdyc2j"><time>1h</time></a></div>
+      <button role="button">
+        <div style="${videoPosterStyle}"></div>
+      </button>
+    </div>
+    </body></html>`;
+
+  it("emits the poster candidate with the post's permalink from a post-container grab", () => {
+    const res = scrapeElementFixture(
+      "https://bsky.app/",
+      videoPostHtml,
+      "[style*='video.bsky.app']",
+    );
+    expect(res.posts).toHaveLength(1);
+    expect(res.posts[0].contentUrl).toBe(
+      "https://video.bsky.app/watch/did%3Aplc%3Axyz/bafkreithumb/thumbnail.jpg",
+    );
+    expect(res.posts[0]).toHaveSource("https://bsky.app/profile/bsky.app/post/3n2opitxdyc2j");
+    expect(res.posts[0]).toHaveTag("bsky.app", "artist");
+  });
+});

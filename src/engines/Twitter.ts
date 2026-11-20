@@ -139,7 +139,9 @@ function pickFocusedImage(images: HTMLImageElement[]): HTMLImageElement | undefi
 /**
  * Photo urls of a tweet article with quoted-tweet media excluded: quotes
  * render their media inside the condensed card, and that card's media links
- * point at the quoted status, not the article's own.
+ * point at the quoted status, not the article's own. Video player posters are
+ * excluded too - before play, the player renders its poster as a tweetPhoto
+ * img, and that media belongs to the video post, not the tweet's photos.
  */
 function ownPhotoUrls(article: Element): string[] {
   const ownStatusId = statusIdFromHref(statusUrlFromArticle(article));
@@ -148,6 +150,12 @@ function ownPhotoUrls(article: Element): string[] {
   for (const img of Array.from(article.querySelectorAll<HTMLImageElement>("div[data-testid='tweetPhoto'] img"))) {
     const photo = img.closest("div[data-testid='tweetPhoto']");
     if (photo?.closest("[data-testid='testCondensedMedia']")) {
+      continue;
+    }
+    if (img.closest("div[data-testid='videoPlayer']")) {
+      continue;
+    }
+    if (photo?.querySelector("video")) {
       continue;
     }
     const mediaStatusId = statusIdFromHref(photo?.closest("a[href*='/status/']")?.getAttribute("href"));
@@ -164,17 +172,43 @@ function ownPhotoUrls(article: Element): string[] {
 }
 
 /**
- * The video stream src of a tweet's player: the <source> child once loaded,
- * else the <video> element itself. On live pages this is a blob: MSE stream
- * pointer - the real mp4 variant urls never reach the DOM. Posts carrying it
- * are placeholders for the consumer's mp4 resolver (syndication API keyed by
- * the status permalink in sources).
+ * The tweet's own video player container, if it renders one. Present before
+ * play - where the <video> may carry no src at all and the poster still
+ * renders as a plain img - so player presence alone is video evidence.
+ * Players inside embedded quote cards are not the tweet's own.
  */
-function videoSrcFromContainer(container: Element): string | undefined {
-  return (
-    container.querySelector<HTMLSourceElement>("div[data-testid='videoPlayer'] video source")?.src ??
-    container.querySelector<HTMLVideoElement>("div[data-testid='videoPlayer'] video")?.src
+function videoPlayerFromContainer(container: Element): Element | undefined {
+  const players = Array.from(container.querySelectorAll("div[data-testid='videoPlayer']"));
+  const own = players.find(
+    (player) => !player.closest("[data-testid='testCondensedMedia'], [role='link'][aria-label^='Post by ']"),
   );
+  return own ?? players[0];
+}
+
+/**
+ * Placeholder media url of a video player: the <video>/<source> src (a blob:
+ * MSE stream pointer once played), else the player's poster attribute, else
+ * the poster img rendered inside the player. Whatever the DOM offers is fine -
+ * the consumer's mp4 resolver replaces placeholders via the status permalink
+ * in sources. Falls back to a bare <video> without the player wrapper (A/B
+ * layouts), excluding quote-card videos the same way.
+ */
+function videoPlaceholderFromContainer(container: Element): string | undefined {
+  const player = videoPlayerFromContainer(container);
+  const scoped = player ?? container;
+  const videos = Array.from(scoped.querySelectorAll<HTMLVideoElement>("video")).filter(
+    (video) => !video.closest("[data-testid='testCondensedMedia'], [role='link'][aria-label^='Post by ']"),
+  );
+  const video = videos[0];
+  const src = video?.getAttribute("src") || video?.querySelector("source")?.getAttribute("src");
+  if (src) {
+    return src;
+  }
+  const poster = video?.getAttribute("poster");
+  if (poster) {
+    return poster;
+  }
+  return player?.querySelector<HTMLImageElement>("img")?.getAttribute("src") ?? undefined;
 }
 
 export default class Twitter extends ScrapeEngineBase {
@@ -182,7 +216,7 @@ export default class Twitter extends ScrapeEngineBase {
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
     "Hashtags become tags and the author's handle becomes an artist tag.",
-    "Video posts carry the player's blob: stream placeholder - the consumer resolves the real mp4 via the status permalink.",
+    "Video posts (played or not) carry a placeholder media url - the consumer resolves the real mp4 via the status permalink.",
   ];
   supportedHosts = ["twitter.com", "mobile.twitter.com", "x.com"];
 
@@ -307,23 +341,22 @@ export default class Twitter extends ScrapeEngineBase {
       result.tryAddPost(post);
     }
 
-    // Video-only tweets: the real mp4 never reaches the DOM (the player holds
-    // a blob: MSE pointer), so the post carries the placeholder src and the
-    // consumer's API resolver swaps in the true mp4 via the status permalink.
-    // Mixed photo+video tweets stay photo-only.
-    if (result.posts.length == 0) {
-      const videoSrc = videoSrcFromContainer(article);
-      if (videoSrc) {
-        const post = new ScrapedPost();
-        post.pageUrl = pageUrl;
-        post.contentUrl = videoSrc;
-        post.contentType = "video";
-        post.sources = source ? [source] : [];
-        post.tags = tags.slice();
-        // Same client-fetch convention as every twimg post above.
-        post.uploadMode = "content";
-        result.tryAddPost(post);
-      }
+    // Video posts: the real mp4 never reaches the DOM. Played players carry a
+    // blob: stream pointer, unplayed ones only a poster still - either way the
+    // post carries the placeholder and the consumer's API resolver swaps in
+    // the true mp4 via the status permalink. Mixed photo+video tweets emit
+    // their photos AND the video (the player's poster img is excluded above).
+    const videoPlaceholder = videoPlaceholderFromContainer(article);
+    if (videoPlaceholder) {
+      const post = new ScrapedPost();
+      post.pageUrl = pageUrl;
+      post.contentUrl = videoPlaceholder;
+      post.contentType = "video";
+      post.sources = source ? [source] : [];
+      post.tags = tags.slice();
+      // Same client-fetch convention as every twimg post above.
+      post.uploadMode = "content";
+      result.tryAddPost(post);
     }
 
     return result;
@@ -391,14 +424,16 @@ export default class Twitter extends ScrapeEngineBase {
     }
 
     // Video lightbox: the media pane holds a player instead of images - emit
-    // the stream placeholder for the consumer's mp4 resolver (same contract as
-    // the tweet-article grab above).
+    // the placeholder (blob: stream pointer, or just the poster still before
+    // play) for the consumer's mp4 resolver. Gated on no photos: the lightbox
+    // shows ONE focused medium, and a photo grab must not drag the tweet's
+    // video in with it.
     if (result.posts.length == 0 && article) {
-      const videoSrc = videoSrcFromContainer(dialog);
-      if (videoSrc) {
+      const videoPlaceholder = videoPlaceholderFromContainer(dialog);
+      if (videoPlaceholder) {
         const post = new ScrapedPost();
         post.pageUrl = pageUrl;
-        post.contentUrl = videoSrc;
+        post.contentUrl = videoPlaceholder;
         post.contentType = "video";
         post.sources = source ? [source] : [];
         post.tags = tags.slice();
@@ -488,15 +523,20 @@ export default class Twitter extends ScrapeEngineBase {
 
       const imgs = Array.from(tweetArticle.querySelectorAll<HTMLImageElement>("div[data-testid='tweetPhoto'] img"));
       for (const img of imgs) {
+        // Video player posters (rendered pre-play) belong to the video post
+        // emitted below, not to the tweet's photos.
+        if (img.closest("div[data-testid='videoPlayer']") || img.closest("div[data-testid='tweetPhoto']")?.querySelector("video")) {
+          continue;
+        }
         const url = getOriginalImageUrl(img);
         if (url) {
           addPost(url.href, "image", articleTags, articleSource);
         }
       }
 
-      const videoSrc = videoSrcFromContainer(tweetArticle);
-      if (videoSrc) {
-        addPost(videoSrc, "video", articleTags, articleSource);
+      const videoPlaceholder = videoPlaceholderFromContainer(tweetArticle);
+      if (videoPlaceholder) {
+        addPost(videoPlaceholder, "video", articleTags, articleSource);
       }
     }
 

@@ -80,23 +80,6 @@ function quoteCardHandle(card: Element): string | undefined {
 }
 
 /**
- * Finds the container of the post that the given image belongs to.
- * Every post renders an author link (`/profile/<handle>`) in its header, so the
- * first ancestor that contains one is the post's own container. This keeps tags
- * from leaking between posts on feeds and threads.
- */
-function postScopeFromImg(img: HTMLImageElement): Element | undefined {
-  let el = img.parentElement;
-  while (el) {
-    if (artistFromElement(el) != undefined) {
-      return el;
-    }
-    el = el.parentElement;
-  }
-  return undefined;
-}
-
-/**
  * Finds the post permalink (`https://bsky.app/profile/<handle>/post/<id>`) in
  * a post container. Links to a post's sub-pages (/liked-by, /likes, ...) are
  * not permalinks; on a post's own page no permalink link exists at all.
@@ -161,6 +144,47 @@ function feedImgs(container: Element): HTMLImageElement[] {
   );
 }
 
+/**
+ * Elements carrying a poster still of a native video upload: pre-play, video
+ * posts render NO <video> and NO content <img> - their poster is a css
+ * background-image div (video.bsky.app .../thumbnail.jpg) and is the only dom
+ * evidence of the video. The extension's bluesky resolver classifies
+ * candidates against the AppView API and swaps video posts to the real stream
+ * (HLS -> mp4), so posters are emitted as plain image candidates.
+ */
+function videoPosterElements(container: Element): Element[] {
+  return Array.from(container.querySelectorAll("[style*='video.bsky.app']"));
+}
+
+function posterUrlFromStyle(el: Element): string | undefined {
+  const style = el.getAttribute("style") ?? "";
+  return style.match(/url\(["']?([^"')]+)["']?\)/)?.[1];
+}
+
+/**
+ * Finds the container of the post that the given element belongs to.
+ * Every post renders an author link (`/profile/<handle>`) in its header, so the
+ * first ancestor that contains one is the post's own container. This keeps tags
+ * from leaking between posts on feeds and threads.
+ */
+function postScopeFromElement(el: Element): Element | undefined {
+  let node: Element | null = el;
+  while (node) {
+    node = node.parentElement;
+    if (!node) {
+      break;
+    }
+    if (artistFromElement(node)) {
+      return node;
+    }
+  }
+  return undefined;
+}
+
+function postScopeFromImg(img: HTMLImageElement): Element | undefined {
+  return postScopeFromElement(img);
+}
+
 function pageUrlFrom(container: Element): string {
   return container.ownerDocument?.location?.href ?? "";
 }
@@ -171,7 +195,7 @@ export default class Bluesky extends ScrapeEngineBase {
   notes = [
     "Hashtags become tags and the author's handle becomes an artist tag.",
     "Tags may be unavailable in the fullscreen image viewer when the post text is not rendered.",
-    "Video posts scrape as their poster image - the consumer classifies them against the Bluesky API and swaps in the real stream.",
+    "Video posts scrape as their css poster still - the consumer classifies them against the Bluesky API and swaps in the real stream.",
   ];
   supportedHosts = ["bsky.app"];
 
@@ -273,6 +297,21 @@ export default class Bluesky extends ScrapeEngineBase {
       result.tryAddPost(post);
     }
 
+    for (const posterEl of videoPosterElements(card)) {
+      const contentUrl = posterUrlFromStyle(posterEl);
+      if (!contentUrl || seen.has(contentUrl)) {
+        continue;
+      }
+      seen.add(contentUrl);
+
+      const post = new ScrapedPost();
+      post.pageUrl = pageUrl;
+      post.contentUrl = contentUrl;
+      post.sources = handle ? [pageUrl] : [];
+      post.tags = artist ? [artist] : [];
+      result.tryAddPost(post);
+    }
+
     return result;
   }
 
@@ -315,6 +354,27 @@ export default class Bluesky extends ScrapeEngineBase {
       result.tryAddPost(post);
     }
 
+    // Poster stills of video uploads: emit only when the imgs yielded nothing
+    // (pre-play video posts render no img at all; once played, both exist and
+    // the img wins to avoid duplicates).
+    if (result.posts.length == 0) {
+      for (const posterEl of videoPosterElements(scope)) {
+        if (posterEl.closest(QUOTE_CARD_SELECTOR)) {
+          continue;
+        }
+        const contentUrl = posterUrlFromStyle(posterEl);
+        if (!contentUrl) {
+          continue;
+        }
+        const post = new ScrapedPost();
+        post.pageUrl = pageUrl;
+        post.contentUrl = contentUrl;
+        post.sources = permalink ? [permalink] : [];
+        post.tags = tags.slice();
+        result.tryAddPost(post);
+      }
+    }
+
     return result;
   }
 
@@ -340,6 +400,19 @@ export default class Bluesky extends ScrapeEngineBase {
       result.tryAddPost(post);
     }
 
+    for (const posterEl of videoPosterElements(dialog)) {
+      const contentUrl = posterUrlFromStyle(posterEl);
+      if (!contentUrl || seen.has(contentUrl)) {
+        continue;
+      }
+      seen.add(contentUrl);
+
+      const post = new ScrapedPost();
+      post.pageUrl = pageUrl;
+      post.contentUrl = contentUrl;
+      result.tryAddPost(post);
+    }
+
     return result;
   }
 
@@ -353,8 +426,9 @@ export default class Bluesky extends ScrapeEngineBase {
     // author's handle.
     const pagePost = document.location.pathname.match(/^\/profile\/([^/]+)\/post\/[^/]+$/);
     let imgEls: HTMLImageElement[];
+    let focusedItem: Element | undefined;
     if (pagePost && /^[A-Za-z0-9.:_-]+$/.test(pagePost[1])) {
-      const focusedItem = document.querySelector(`[data-testid="postThreadItem-by-${pagePost[1]}"]`);
+      focusedItem = document.querySelector(`[data-testid="postThreadItem-by-${pagePost[1]}"]`) ?? undefined;
       if (focusedItem) {
         this.log("Post page detected - grabbing only the focused post.");
         imgEls = Array.from(focusedItem.querySelectorAll("img"));
@@ -373,6 +447,11 @@ export default class Bluesky extends ScrapeEngineBase {
       els = imgEls.filter((x) => x.src.indexOf("feed") != -1);
     }
 
+    // Scopes that already yielded an img post: video-post posters are skipped
+    // for them (once played, a video post renders BOTH its feed img and the
+    // css poster div - the img wins to avoid duplicates).
+    const scopesWithImgPosts = new Set<Element>();
+
     for (const el of els) {
       const post = new ScrapedPost();
       post.contentUrl = getFullSizeImg(el.src);
@@ -382,6 +461,46 @@ export default class Bluesky extends ScrapeEngineBase {
       const scope = el.closest("[role='dialog']")
         ? this.underlyingScopeForViewerImg(el)
         : postScopeFromImg(el);
+      if (scope) {
+        scopesWithImgPosts.add(scope);
+        const permalink = permalinkFromElement(scope);
+        const authorHandle = authorHandleFromScope(scope, permalink);
+        const artist = authorHandle ? artistTagFromHandle(authorHandle) : artistFromElement(scope);
+        const hashtags = hashtagsFromElement(scope);
+        post.tags = artist ? hashtags.concat([artist]) : hashtags;
+        if (permalink) {
+          post.sources = [permalink];
+          post.pageUrl = permalink;
+        }
+      }
+      if (!post.pageUrl) {
+        post.pageUrl = document.location.href;
+      }
+
+      result.tryAddPost(post);
+    }
+
+    // Video-post poster stills (css background-image divs): the img sweep
+    // above finds nothing on pre-play video posts, so they are the only
+    // candidates a video post yields to the extension's resolver.
+    const posterScope: Element = focusedItem ?? document.documentElement;
+    const seenPosters = new Set<string>();
+    for (const posterEl of videoPosterElements(posterScope)) {
+      if (posterEl.closest("[role='dialog']")) {
+        continue;
+      }
+      const scope = postScopeFromElement(posterEl);
+      if (scope && scopesWithImgPosts.has(scope)) {
+        continue;
+      }
+      const contentUrl = posterUrlFromStyle(posterEl);
+      if (!contentUrl || seenPosters.has(contentUrl)) {
+        continue;
+      }
+      seenPosters.add(contentUrl);
+
+      const post = new ScrapedPost();
+      post.contentUrl = contentUrl;
       if (scope) {
         const permalink = permalinkFromElement(scope);
         const authorHandle = authorHandleFromScope(scope, permalink);
