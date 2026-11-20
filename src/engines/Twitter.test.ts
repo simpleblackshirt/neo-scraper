@@ -416,7 +416,7 @@ describe("element grab: placeholder image without src is skipped", () => {
   });
 });
 
-describe("element grab: video-only tweet is skipped", () => {
+describe("element grab: video-only tweet emits a resolver placeholder", () => {
   const html = `<html><body>
     <article data-testid="tweet" tabindex="0">
       <div data-testid="User-Name">
@@ -433,9 +433,19 @@ describe("element grab: video-only tweet is skipped", () => {
     </article>
     </body></html>`;
 
-  it("yields zero posts (blob: can never upload; mp4 resolution is API-resolver territory)", () => {
+  it("emits one video post carrying the blob placeholder for the consumer's mp4 resolver", () => {
     const res = scrapeElementFixture("https://x.com/home", html, "[data-testid='videoPlayer']");
-    expect(res.posts.length).toBe(0);
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentType).toBe("video");
+    expect(res.posts[0].contentUrl).toBe("blob:https://x.com/4b20164f-79d1-4da5-b72f-0be72e8e18cf");
+    expect(res.posts[0]).toHaveSource("https://x.com/ArtistOne/status/333");
+    expect(res.posts[0].pageUrl).toBe("https://x.com/ArtistOne/status/333");
+  });
+
+  it("keeps the article's tags and the client-fetch upload mode", () => {
+    const res = scrapeElementFixture("https://x.com/home", html, "[data-testid='videoPlayer']");
+    expect(res.posts[0]).toHaveTag("artistone", "artist");
+    expect(res.posts[0].uploadMode).toBe("content");
   });
 });
 
@@ -450,10 +460,43 @@ describe("element grab: tweet with both photo and video player", () => {
     </article>
     </body></html>`;
 
-  it("grabs the photo and ignores the unresolvable video", () => {
+  it("grabs the photo and stays photo-only (mixed media resolution is out of scope)", () => {
     const res = scrapeElementFixture("https://x.com/home", html, "img");
     expect(res.posts.length).toBe(1);
     expect(res.posts[0].contentUrl).toBe("https://pbs.twimg.com/media/AAA?format=jpg&name=orig");
+  });
+});
+
+const videoLightboxHtml = `<html><body>
+  <div role="dialog">
+    <div data-testid="videoPlayer">
+      <video preload="none" aria-label="Embedded video" poster="https://pbs.twimg.com/amplify_video_thumb/999/img/abc.jpg" src="blob:https://x.com/vid"></video>
+    </div>
+    <article data-testid="tweet" tabindex="0">
+      <div data-testid="User-Name">
+        <a href="/ArtistOne"><span>Artist One</span></a>
+        <a href="/ArtistOne/status/111"><time datetime="2026-11-11T07:00:00.000Z">2h</time></a>
+      </div>
+      <div><a href="/ArtistOne/status/111/hashtag/Artnight"><span>#Artnight</span></a></div>
+    </article>
+  </div>
+  </body></html>`;
+
+describe("element grab: video lightbox emits the resolver placeholder", () => {
+  it("resolves to the dialog's player and carries the focused tweet's metadata", () => {
+    // The player lives in the media pane, outside every article.
+    const res = scrapeElementFixture(
+      "https://x.com/ArtistOne/status/111/video/1",
+      videoLightboxHtml,
+      "[data-testid='videoPlayer'] video",
+    );
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentType).toBe("video");
+    expect(res.posts[0].contentUrl).toBe("blob:https://x.com/vid");
+    expect(res.posts[0]).toHaveSource("https://x.com/ArtistOne/status/111");
+    expect(res.posts[0].pageUrl).toBe("https://x.com/ArtistOne/status/111");
+    expect(res.posts[0]).toHaveTag("artistone", "artist");
+    expect(res.posts[0]).toHaveTag("artnight");
   });
 });
 

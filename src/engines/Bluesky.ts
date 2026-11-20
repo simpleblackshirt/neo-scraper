@@ -171,6 +171,7 @@ export default class Bluesky extends ScrapeEngineBase {
   notes = [
     "Hashtags become tags and the author's handle becomes an artist tag.",
     "Tags may be unavailable in the fullscreen image viewer when the post text is not rendered.",
+    "Video posts scrape as their poster image - the consumer classifies them against the Bluesky API and swaps in the real stream.",
   ];
   supportedHosts = ["bsky.app"];
 
@@ -295,6 +296,11 @@ export default class Bluesky extends ScrapeEngineBase {
       if (img.closest(QUOTE_CARD_SELECTOR)) {
         continue;
       }
+      // Video posts render their poster as a feed_thumbnail img and are
+      // emitted as image candidates here - the consumer's bluesky resolver
+      // classifies candidates against the AppView API and swaps video posts
+      // to the real stream (HLS -> mp4). No DOM video detection: the player
+      // element only mounts after the post is played.
       const contentUrl = getFullSizeImg(img.src);
       if (seen.has(contentUrl)) {
         continue;

@@ -163,11 +163,26 @@ function ownPhotoUrls(article: Element): string[] {
   return [...seenUrls];
 }
 
+/**
+ * The video stream src of a tweet's player: the <source> child once loaded,
+ * else the <video> element itself. On live pages this is a blob: MSE stream
+ * pointer - the real mp4 variant urls never reach the DOM. Posts carrying it
+ * are placeholders for the consumer's mp4 resolver (syndication API keyed by
+ * the status permalink in sources).
+ */
+function videoSrcFromContainer(container: Element): string | undefined {
+  return (
+    container.querySelector<HTMLSourceElement>("div[data-testid='videoPlayer'] video source")?.src ??
+    container.querySelector<HTMLVideoElement>("div[data-testid='videoPlayer'] video")?.src
+  );
+}
+
 export default class Twitter extends ScrapeEngineBase {
   name = "twitter";
   features: ScrapeEngineFeature[] = ["content", "tags", "tag_category", "source"];
   notes = [
     "Hashtags become tags and the author's handle becomes an artist tag.",
+    "Video posts carry the player's blob: stream placeholder - the consumer resolves the real mp4 via the status permalink.",
   ];
   supportedHosts = ["twitter.com", "mobile.twitter.com", "x.com"];
 
@@ -292,8 +307,25 @@ export default class Twitter extends ScrapeEngineBase {
       result.tryAddPost(post);
     }
 
-    // Video-only tweets yield nothing: the mp4 url never reaches the DOM and
-    // the poster thumb would misrepresent the post (see notes).
+    // Video-only tweets: the real mp4 never reaches the DOM (the player holds
+    // a blob: MSE pointer), so the post carries the placeholder src and the
+    // consumer's API resolver swaps in the true mp4 via the status permalink.
+    // Mixed photo+video tweets stay photo-only.
+    if (result.posts.length == 0) {
+      const videoSrc = videoSrcFromContainer(article);
+      if (videoSrc) {
+        const post = new ScrapedPost();
+        post.pageUrl = pageUrl;
+        post.contentUrl = videoSrc;
+        post.contentType = "video";
+        post.sources = source ? [source] : [];
+        post.tags = tags.slice();
+        // Same client-fetch convention as every twimg post above.
+        post.uploadMode = "content";
+        result.tryAddPost(post);
+      }
+    }
+
     return result;
   }
 
@@ -358,6 +390,23 @@ export default class Twitter extends ScrapeEngineBase {
       }
     }
 
+    // Video lightbox: the media pane holds a player instead of images - emit
+    // the stream placeholder for the consumer's mp4 resolver (same contract as
+    // the tweet-article grab above).
+    if (result.posts.length == 0 && article) {
+      const videoSrc = videoSrcFromContainer(dialog);
+      if (videoSrc) {
+        const post = new ScrapedPost();
+        post.pageUrl = pageUrl;
+        post.contentUrl = videoSrc;
+        post.contentType = "video";
+        post.sources = source ? [source] : [];
+        post.tags = tags.slice();
+        post.uploadMode = "content";
+        result.tryAddPost(post);
+      }
+    }
+
     return result;
   }
 
@@ -391,9 +440,11 @@ export default class Twitter extends ScrapeEngineBase {
       post.contentType = contentType;
       post.sources = [source];
       post.tags = tags.slice();
-      // twimg (pbs.twimg.com, video.twimg.com) rejects non-browser fetches,
-      // so the szurubooru server cannot download these urls - the consumer
-      // must fetch them itself. Matches the element-grab paths above.
+      // twimg (pbs.twimg.com) intermittently 403s non-browser fetches, so the
+      // szurubooru server may be unable to download these urls - the consumer
+      // fetches the bytes itself instead (video.twimg.com would also work in
+      // url mode, but one mode per site keeps behavior predictable). Matches
+      // the element-grab paths above.
       post.uploadMode = "content";
       result.tryAddPost(post);
     };
@@ -443,9 +494,7 @@ export default class Twitter extends ScrapeEngineBase {
         }
       }
 
-      const videoSrc =
-        tweetArticle.querySelector<HTMLSourceElement>("div[data-testid='videoPlayer'] video source")?.src ??
-        tweetArticle.querySelector<HTMLVideoElement>("div[data-testid='videoPlayer'] video")?.src;
+      const videoSrc = videoSrcFromContainer(tweetArticle);
       if (videoSrc) {
         addPost(videoSrc, "video", articleTags, articleSource);
       }
