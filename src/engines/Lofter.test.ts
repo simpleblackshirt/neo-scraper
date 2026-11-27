@@ -415,7 +415,10 @@ describe("element grab: image viewer overlay (exact gallery match)", () => {
   it("resolves the underlying card by exact large-rendition identity", () => {
     const res = scrapeElementFixture("https://www.lofter.com/", html, "div.photos img");
     expect(res.posts.length).toBe(1);
-    expect(res.posts[0].contentUrl).toBe(feedThumb.split("?")[0]);
+    // The card resolves to its large rendition (the same file the viewer
+    // displays): the gallery copy's `large` attribute governs content urls,
+    // so the grab unifies with the permalink page and the overlay itself.
+    expect(res.posts[0].contentUrl).toBe(viewerLarge.split("?")[0]);
     expect(res.posts[0]).toHaveTag("someauthor", "artist");
     expect(res.posts[0]).toHaveTagProfileUrl("someauthor", "https://someauthor.lofter.com");
     expect(res.posts[0]).toHaveSource("https://someauthor.lofter.com/post/1fabcd12_34efabcd");
@@ -483,6 +486,84 @@ describe("element grab: same-blog cards are told apart by exact file identity", 
     expect(res.posts[0].contentUrl).toBe(cardAImg.split("?")[0]);
     expect(res.posts[0]).toHaveSource("https://atractylodec.lofter.com/post/30d2a938_34f7d1ba2");
     expect(res.posts[0].contentUrl).not.toBe(cardBImg.split("?")[0]);
+  });
+});
+
+describe("element grab: feed card resolves the gallery's large rendition (live tag-page dump)", () => {
+  // Live structure: the visible card img uses the feed rendition src without
+  // a `large` attribute, while the hidden gallery list repeats the same src
+  // WITH a `large` attribute pointing at the large rendition - a separate
+  // stored object that the permalink page's bigimgsrc and the photoshow
+  // viewer also reference. Object content-types are set per rendition (the
+  // feed object answers image/jpeg, the large object application/octet-
+  // stream), so resolving the feed src makes a feed grab yield a different
+  // file than the same post's permalink grab. Both copies must resolve to
+  // the large rendition and collapse into one post per image.
+  const feedA =
+    "https://imglf5.lf127.net/img/846a7b64800067cb/YTBpaWdJRnlBOXJYNXlGMGp6amVoSXNlZlBuVlBQbWMzam4yY3hxT3Flaz0.jpg";
+  const largeA =
+    "https://imglf3.lf127.net/img/97ef65b09ccda5c0/YTBpaWdJRnlBOXJYNXlGMGp6amVoR3d5RDFTUk5zRXFRZ1VTd2p4WHRlTT0.jpg?imageView&thumbnail=1680x0&quality=96&stripmeta=0&type=jpg";
+  const feedB =
+    "https://imglf3.lf127.net/img/ee49a5accead524c/YTBpaWdJRnlBOXJYNXlGMGp6amVoSWtZdFRxRG1wVXJJQlowUTkvVjU4Yz0.jpg";
+  const largeB =
+    "https://imglf4.lf127.net/img/7e2e1fe0f0bd4776/YTBpaWdJRnlBOXJYNXlGMGp6amVoRFF3aFNkdjVseHNySjRKdWFXNnBCND0.jpg?imageView&thumbnail=1680x0&quality=96&stripmeta=0&type=jpg";
+  const html = `<html><body>
+    <div>
+      <div class="isaym">
+        <a href="https://xinjinjumin439852283112.lofter.com"><span>信</span></a>
+        <a href="https://xinjinjumin439852283112.lofter.com/post/b37e3ea3_3f94b4155"><span>查看全文</span></a>
+        <div class="img">
+          <div class="imgc">
+            <a href="#"><img src="${feedA}"></a>
+            <ol style="display:none;">
+              <li>
+                <div class="imgc">
+                  <a href="#"><img src="${feedA}?imageView&thumbnail=500x0&quality=96&stripmeta=0&type=jpg" large="${largeA}"></a>
+                </div>
+              </li>
+              <li>
+                <div class="imgc">
+                  <a href="#"><img src="${feedB}?imageView&thumbnail=500x0&quality=96&stripmeta=0&type=jpg" large="${largeB}"></a>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+    </body></html>`;
+
+  it("resolves the visible img and the gallery copy to one large-rendition post each", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, "img[src*='846a7b64']");
+    expect(res.posts.length).toBe(2);
+    expect(res.posts[0].contentUrl).toBe(largeA.split("?")[0]);
+    expect(res.posts[1].contentUrl).toBe(largeB.split("?")[0]);
+    expect(
+      res.posts.every((p) => p.contentUrl.indexOf("846a7b64") == -1 && p.contentUrl.indexOf("ee49a5ac") == -1)
+    ).toBe(true);
+  });
+});
+
+describe("element grab: single-image card without a gallery keeps the feed rendition", () => {
+  // Live structure: single-picture posts render no gallery list and no
+  // `large` attribute - there is no large-rendition reference to unify with,
+  // so the feed src resolves as before.
+  const feed =
+    "https://imglf6.lf127.net/img/9c7aedb2b85a3142/WlVOVUMwMGJIU0xpSGo4TnR3T1JlZXE4MUFZUDRiN1RXeHJCWHUxbmUyaz0.jpg";
+  const html = `<html><body>
+    <div>
+      <div class="isaym">
+        <a href="https://someauthor.lofter.com"><span>Author</span></a>
+        <a href="https://someauthor.lofter.com/post/1fabcd12_34efabcd"><span>查看全文</span></a>
+        <div><img src="${feed}"></div>
+      </div>
+    </div>
+    </body></html>`;
+
+  it("resolves the img src unchanged", () => {
+    const res = scrapeElementFixture("https://www.lofter.com/", html, "img");
+    expect(res.posts.length).toBe(1);
+    expect(res.posts[0].contentUrl).toBe(feed);
   });
 });
 

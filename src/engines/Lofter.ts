@@ -281,7 +281,8 @@ export default class Lofter extends ScrapeEngineBase {
    * cards and themed permalink pages alike: artist from the permalink's blog
    * subdomain (or the card's author link), tags from /tag/ link hrefs, media
    * via getOriginalImgUrl (gallery anchors, lazy attributes, original
-   * quality) with the usual avatar exclusion.
+   * quality) unified onto the gallery's large rendition where a `large`
+   * attribute exists, with the usual avatar exclusion.
    */
   private scrapeCard(scope: Element): ScrapeResult {
     const result = new ScrapeResult(this.name);
@@ -337,13 +338,37 @@ export default class Lofter extends ScrapeEngineBase {
       return result;
     }
 
-    const seen = new Set<string>();
+    /**
+     * Feed cards render each image twice: the visible img and a hidden
+     * gallery copy share the same feed-rendition src, and the copy carries a
+     * `large` attribute pointing at the large rendition - a separate stored
+     * object that the post's permalink page (bigimgsrc) and the photoshow
+     * viewer both reference. Resolving the feed src would make a feed grab
+     * yield a different file than the same post's permalink grab (identical
+     * pixels, near-identical size, different bytes and content-type: the
+     * object content-types are set per rendition, not per file extension).
+     * Pass 1 maps each stripped img src to its stripped large url; pass 2
+     * resolves every img through the map, so the visible img and the gallery
+     * copy collapse onto one large-rendition post. Cards without large
+     * attributes (single-image posts, themed pages) resolve exactly as
+     * before.
+     */
+    const largeBySrc = new Map<string, string>();
     for (const img of Array.from(scope.querySelectorAll("img"))) {
-      const url = getOriginalImgUrl(img);
-      if (!isLofterCdnUrl(url) || isAvatarImage(img, url)) {
+      const large = img.getAttribute("large");
+      if (!large || !isLofterCdnUrl(large)) {
         continue;
       }
-      const contentUrl = upgradeToOriginalQuality(url);
+      largeBySrc.set(upgradeToOriginalQuality(getOriginalImgUrl(img)), upgradeToOriginalQuality(large));
+    }
+
+    const seen = new Set<string>();
+    for (const img of Array.from(scope.querySelectorAll("img"))) {
+      const feedSrc = upgradeToOriginalQuality(getOriginalImgUrl(img));
+      const contentUrl = largeBySrc.get(feedSrc) ?? feedSrc;
+      if (!isLofterCdnUrl(contentUrl) || isAvatarImage(img, contentUrl)) {
+        continue;
+      }
       if (seen.has(contentUrl)) {
         continue;
       }
